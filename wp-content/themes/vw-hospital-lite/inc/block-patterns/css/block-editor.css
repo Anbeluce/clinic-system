@@ -1,0 +1,51 @@
+.sliderbox h1.block-editor-rich-text__editable.block-editor-block-list__block.wp-block,.sliderbox .block-editor-rich-text__editable.wp-block-button__link,.sliderbox .block-editor-rich-text__editable.text-center.block-editor-block-list__block.wp-block,.service-box h3, .main-service h2, .service-box, .service-box .block-editor-rich-text__editable.wp-block-button__link{
+  font-family: 'Open Sans', sans-serif !important;
+  margin-top: 5px;
+  margin-bottom: 5px;
+}
+.sliderbox{
+  min-height: 600px;
+}
+/*slider css*/
+.sliderbox .block-editor-rich-text__editable.wp-block-button__link,.service-box .block-editor-rich-text__editable.wp-block-button__link{
+  background: #fe6f23 !important;
+  font-size: 15px !important;
+  font-weight: 600 !important;
+}
+.sliderbox .block-editor-rich-text__editable.wp-block-button__link{
+  padding: 10px 20px !important;
+}
+.sliderbox h1{
+  letter-spacing: 1;
+}
+.sliderbox .block-editor-block-list__block,.service-box .block-editor-block-list__block{
+  margin-top: 10px !important;
+  margin-bottom: 10px !important
+}
+/*service section*/
+.service-box {
+  border: solid 2px #3ca6d4;
+  border-radius: 5px;
+  padding: 20px;
+  margin: 2% 0;
+}
+.service-box .block-editor-rich-text__editable.wp-block-button__link{
+  padding: 8px 20px !important;
+}
+.sliderbox .block-editor-rich-text__editable.wp-block-button__link:hover,.service-box .block-editor-rich-text__editable.wp-block-button__link:hover {
+  background: #3ca6d4 !important;
+}
+.service-box p{
+  line-height: 1.7;
+}
+.main-service h2{
+  padding-bottom: 5px;
+}
+.main-service h2:after{
+  content: "";
+  width: 30%;
+  padding-bottom: 12px;
+  border-bottom: 3px solid #3ca6d4;
+  display: block;
+  margin: 0 auto;
+}
