@@ -17,15 +17,28 @@
   <?php wp_head(); ?>
   <style id="auth-buttons-style">
     .header-right-wrap { display: flex; align-items: center; gap: 15px; justify-content: flex-end; }
-    .auth-buttons { display: flex; gap: 8px; }
+    .auth-buttons { display: flex; gap: 8px; align-items: center; }
     .btn-auth { display: inline-block; padding: 7px 16px; border-radius: 4px; font-size: 12px; font-weight: 700; text-decoration: none !important; transition: all 0.2s ease; white-space: nowrap; text-transform: uppercase; }
     .btn-login { color: #005086 !important; border: 1.5px solid #005086; background: transparent; }
     .btn-login:hover { background: #eef6fc; }
     .btn-register { background: #005086; color: #fff !important; border: 1.5px solid #005086; }
     .btn-register:hover { background: #003d66; border-color: #003d66; transform: translateY(-1px); }
-    .btn-logout { color: #666 !important; font-size: 11px; text-transform: none; border-bottom: 1px solid transparent; padding: 5px 0; border-radius: 0; }
-    .btn-logout:hover { border-bottom-color: #666; }
-    .user-welcome { font-size: 13px; color: #333; font-weight: 600; margin-right: 5px; }
+    
+    /* User Dropdown Style */
+    .user-account-dropdown { position: relative; display: inline-block; }
+    .user-dropbtn { background: #005086; color: white; padding: 8px 18px; border-radius: 50px; border: none; font-size: 13px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 10px; transition: all 0.3s; }
+    .user-dropbtn:hover { background: #003d66; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+    .user-dropdown-content { display: none; position: absolute; right: 0; background-color: #fff; min-width: 200px; box-shadow: 0px 10px 30px rgba(0,0,0,0.15); z-index: 1000; border-radius: 12px; margin-top: 5px; border: 1px solid #eee; }
+    /* Cầu nối tàng hình để không bị mất hover */
+    .user-dropdown-content::before { content: ""; position: absolute; top: -15px; left: 0; width: 100%; height: 15px; display: block; }
+    .user-dropdown-content a { color: #333; padding: 12px 18px; text-decoration: none !important; display: block; font-size: 13px; font-weight: 600; text-transform: none; text-align: left; transition: all 0.2s; position: relative; z-index: 2; }
+    .user-dropdown-content a i { margin-right: 10px; color: #005086; width: 16px; text-align: center; }
+    .user-dropdown-content a:hover { background-color: #f8fafc; color: #005086; }
+    .user-dropdown-content hr { margin: 0; border: 0; border-top: 1px solid #f0f0f0; }
+    .user-account-dropdown:hover .user-dropdown-content { display: block; }
+    .logout-item { color: #e53e3e !important; }
+    .logout-item i { color: #e53e3e !important; }
+    
     @media (max-width: 991px) { 
         .header-right-wrap { justify-content: center; margin-top: 10px; }
     }
@@ -166,8 +179,19 @@
                   <?php if ( is_user_logged_in() ) : 
                     $current_user = wp_get_current_user();
                   ?>
-                    <span class="user-welcome">Chào, <?php echo esc_html($current_user->display_name); ?></span>
-                    <a href="<?php echo wp_logout_url( home_url() ); ?>" class="btn-auth btn-logout">Đăng xuất</a>
+                    <div class="user-account-dropdown">
+                        <button class="user-dropbtn">
+                            <i class="fas fa-user-circle" style="font-size: 18px;"></i>
+                            <span>Chào, <?php echo esc_html($current_user->display_name); ?></span>
+                            <i class="fas fa-chevron-down" style="font-size: 10px;"></i>
+                        </button>
+                        <div class="user-dropdown-content">
+                            <a href="<?php echo home_url('/tai-khoan/'); ?>"><i class="fas fa-user-cog"></i> Cài đặt tài khoản</a>
+                            <a href="<?php echo home_url('/lich-su/'); ?>"><i class="fas fa-history"></i> Lịch sử đặt lịch</a>
+                            <hr>
+                            <a href="<?php echo wp_logout_url( home_url() ); ?>" class="logout-item"><i class="fas fa-sign-out-alt"></i> Đăng xuất</a>
+                        </div>
+                    </div>
                   <?php else : ?>
                     <a href="<?php echo home_url('/dang-nhap/'); ?>" class="btn-auth btn-login">Đăng nhập</a>
                     <a href="<?php echo home_url('/dang-ky/'); ?>" class="btn-auth btn-register">Đăng ký</a>

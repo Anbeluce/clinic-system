@@ -97,7 +97,9 @@ add_action( 'init', 'create_doctor_post_type' );
 
 // Tạo Shortcode hiển thị Form đặt lịch
 function clinic_booking_form_shortcode() {
-    ob_start(); // Bắt đầu lưu bộ đệm đầu ra
+    ob_start();
+    $current_user = wp_get_current_user();
+    $is_logged_in = is_user_logged_in();
 
     // Xử lý dữ liệu khi người dùng bấm nút "Xác nhận Đặt lịch"
     if ( isset( $_POST['submit_booking'] ) ) {
@@ -122,6 +124,7 @@ function clinic_booking_form_shortcode() {
             'post_content' => 'Triệu chứng: ' . $symptoms,
             'post_status'  => 'pending', // Trạng thái chờ xác nhận
             'post_type'    => 'appointment', // Đúng với Custom Post Type đã tạo
+            'post_author'  => get_current_user_id(), // Gắn ID người dùng nếu đã đăng nhập
         );
 
         // Chèn dữ liệu vào bảng wp_posts
@@ -402,6 +405,18 @@ function clinic_booking_form_shortcode() {
         .cbf-btn-primary:hover {
             background: #4a8bc4;
         }
+        .cbf-user-info-badge {
+            background: #f0f7ff;
+            border: 1px dashed #5b9bd5;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            color: #1a365d;
+        }
+        .cbf-user-info-badge i { font-size: 24px; color: #5b9bd5; }
         .cbf-btn-secondary {
             background: #005086;
             color: white;
@@ -553,20 +568,38 @@ function clinic_booking_form_shortcode() {
 
                 <!-- BƯỚC 2 -->
                 <div id="cbf-step-2">
-                    <div class="cbf-group">
-                        <div class="cbf-input-wrap">
-                            <input type="text" name="registrant_name" id="registrant_name" placeholder="Họ tên người đăng ký" required>
+                    <?php if ( $is_logged_in ) : ?>
+                        <div class="cbf-user-info-badge">
+                            <i class="fas fa-user-circle"></i>
+                            <div>
+                                <strong>Chào <?php echo esc_html($current_user->display_name); ?></strong><br>
+                                <span style="font-size: 12px; color: #666;">Đang sử dụng email: <?php echo esc_html($current_user->user_email); ?></span>
+                            </div>
                         </div>
-                    </div>
-                    
-                    <div class="cbf-group-row">
-                        <div class="cbf-input-wrap">
-                            <input type="tel" name="patient_phone" id="patient_phone" placeholder="Điện thoại" required>
+                        <input type="hidden" name="registrant_name" value="<?php echo esc_attr($current_user->display_name); ?>">
+                        <input type="hidden" name="patient_email" value="<?php echo esc_attr($current_user->user_email); ?>">
+                        
+                        <div class="cbf-group">
+                            <div class="cbf-input-wrap">
+                                <input type="tel" name="patient_phone" id="patient_phone" placeholder="Số điện thoại liên hệ" required>
+                            </div>
                         </div>
-                        <div class="cbf-input-wrap">
-                            <input type="email" name="patient_email" id="patient_email" placeholder="Email" required>
+                    <?php else : ?>
+                        <div class="cbf-group">
+                            <div class="cbf-input-wrap">
+                                <input type="text" name="registrant_name" id="registrant_name" placeholder="Họ tên người đăng ký" required>
+                            </div>
                         </div>
-                    </div>
+                        
+                        <div class="cbf-group-row">
+                            <div class="cbf-input-wrap">
+                                <input type="tel" name="patient_phone" id="patient_phone" placeholder="Điện thoại" required>
+                            </div>
+                            <div class="cbf-input-wrap">
+                                <input type="email" name="patient_email" id="patient_email" placeholder="Email" required>
+                            </div>
+                        </div>
+                    <?php endif; ?>
 
                     <div class="cbf-group">
                         <div class="cbf-input-wrap">
@@ -1617,13 +1650,47 @@ function cb_ajax_get_specialties() {
 /**
  * Redirect logged in users away from login/register pages
  */
-add_action( 'template_redirect', 'clinic_auth_redirect_logged_in_users' );
-function clinic_auth_redirect_logged_in_users() {
+/**
+ * Auth Protection Logic: 
+ * 1. Redirect logged in users away from login/register
+ * 2. Redirect guests away from history page
+ */
+add_action( 'template_redirect', 'clinic_auth_protection_logic' );
+function clinic_auth_protection_logic() {
+    // 1. Nếu đã đăng nhập mà vào trang đăng nhập/đăng ký -> về trang chủ
     if ( is_user_logged_in() ) {
         if ( is_page('dang-nhap') || is_page('dang-ky') ) {
             wp_safe_redirect( home_url() );
             exit;
         }
+    } else {
+        // 2. Nếu chưa đăng nhập mà vào trang lịch sử hoặc cài đặt -> về trang đăng nhập
+        if ( is_page('lich-su') || is_page('tai-khoan') ) {
+            wp_safe_redirect( home_url('/dang-nhap/') );
+            exit;
+        }
+    }
+}
+
+/**
+ * Hide Admin Bar for non-admins
+ */
+add_filter( 'show_admin_bar', 'clinic_hide_admin_bar' );
+function clinic_hide_admin_bar( $show ) {
+    if ( ! current_user_can( 'manage_options' ) ) {
+        return false;
+    }
+    return $show;
+}
+
+/**
+ * Block Admin Dashboard access for non-admins
+ */
+add_action( 'admin_init', 'clinic_block_admin_access' );
+function clinic_block_admin_access() {
+    if ( is_user_logged_in() && ! current_user_can( 'manage_options' ) && ! ( defined( 'DOING_AJAX' ) && DOING_AJAX ) ) {
+        wp_safe_redirect( home_url() );
+        exit;
     }
 }
 
@@ -1632,7 +1699,7 @@ function clinic_auth_redirect_logged_in_users() {
  */
 add_action('wp_head', 'clinic_auth_styles');
 function clinic_auth_styles() {
-    if ( is_page('dang-nhap') || is_page('dang-ky') ) {
+    if ( is_page('dang-nhap') || is_page('dang-ky') || is_page('tai-khoan') ) {
         ?>
         <style>
             .clinic-auth-page { background: #f7fafc; min-height: 80vh; display: flex; align-items: center; justify-content: center; font-family: 'Montserrat', sans-serif; }
@@ -1660,6 +1727,22 @@ function clinic_auth_styles() {
         </style>
         <?php
     }
+}
+
+/**
+ * Global Styles to hide specific theme elements
+ */
+add_action('wp_head', 'clinic_global_hide_elements');
+function clinic_global_hide_elements() {
+    ?>
+    <style>
+        /* Ẩn Breadcrumbs và Tiêu đề trang của theme trên tất cả các trang */
+        .bradcrumbs, .vw-page-title { display: none !important; }
+        
+        /* Căn chỉnh lại khoảng cách đầu trang sau khi ẩn tiêu đề */
+        #maincontent { padding-top: 20px; }
+    </style>
+    <?php
 }
 
 /**
@@ -1898,4 +1981,314 @@ function clinic_register_form_shortcode() {
     return ob_get_clean();
 }
 add_shortcode( 'clinic_register_form', 'clinic_register_form_shortcode' );
+
+/**
+ * Shortcode for Booking History
+ */
+function clinic_booking_history_shortcode() {
+    if ( ! is_user_logged_in() ) {
+        return '<div class="clinic-history-container"><p style="text-align:center;">Vui lòng <a href="' . home_url('/dang-nhap/') . '" style="color:#005086; font-weight:700;">đăng nhập</a> để xem lịch sử đặt lịch của bạn.</p></div>';
+    }
+
+    $current_user_id = get_current_user_id();
+    $args = array(
+        'post_type'      => 'appointment',
+        'post_status'    => array('pending', 'publish', 'draft', 'private'),
+        'author'         => $current_user_id,
+        'posts_per_page' => -1,
+        'orderby'        => 'date',
+        'order'          => 'DESC'
+    );
+    $query = new WP_Query($args);
+
+    ob_start();
+    ?>
+    <div class="clinic-history-container">
+        <h3 style="color: #1a365d; font-weight: 800; text-transform: uppercase; border-bottom: 3px solid #005086; padding-bottom: 10px; display: inline-block; margin-bottom: 30px;">Lịch sử đặt lịch</h3>
+        
+        <?php if ( $query->have_posts() ) : ?>
+            <div style="overflow-x: auto;">
+                <table class="clinic-history-table">
+                    <thead>
+                        <tr>
+                            <th>Ngày & Giờ</th>
+                            <th>Bác sĩ / Chuyên khoa</th>
+                            <th>Người khám</th>
+                            <th>Trạng thái</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php while ( $query->have_posts() ) : $query->the_post(); 
+                            $post_id = get_the_ID();
+                            $status = get_post_status();
+                            
+                            $status_label = 'Chờ xác nhận';
+                            $status_class = 'status-pending';
+                            
+                            if ($status == 'publish') {
+                                $status_label = 'Đã xác nhận';
+                                $status_class = 'status-confirmed';
+                            } elseif ($status == 'draft' || $status == 'private') {
+                                $status_label = 'Đã hủy';
+                                $status_class = 'status-cancelled';
+                            }
+                            
+                            $booking_date = get_post_meta($post_id, '_booking_date', true);
+                            $booking_time = get_post_meta($post_id, '_booking_time', true);
+                            $doctor = get_post_meta($post_id, '_selected_doctor', true);
+                            $specialty = get_post_meta($post_id, '_specialty', true);
+                            $p_name = get_post_meta($post_id, '_patient_name', true);
+                        ?>
+                            <tr>
+                                <td>
+                                    <div style="font-weight: 700; color: #2d3748;"><?php echo esc_html($booking_date); ?></div>
+                                    <div style="font-size: 12px; color: #718096;"><?php echo esc_html($booking_time); ?></div>
+                                </td>
+                                <td>
+                                    <div style="font-weight: 600; color: #005086;"><?php echo esc_html($doctor); ?></div>
+                                    <div style="font-size: 12px; color: #4a5568;"><?php echo esc_html($specialty); ?></div>
+                                </td>
+                                <td style="font-size: 14px; color: #4a5568;"><?php echo esc_html($p_name); ?></td>
+                                <td>
+                                    <span class="status-badge <?php echo $status_class; ?>">
+                                        <?php echo esc_html($status_label); ?>
+                                    </span>
+                                </td>
+                            </tr>
+                        <?php endwhile; wp_reset_postdata(); ?>
+                    </tbody>
+                </table>
+            </div>
+        <?php else : ?>
+            <div style="text-align: center; padding: 40px; background: #f8fafc; border-radius: 12px; border: 1px dashed #cbd5e0;">
+                <p style="color: #718096; margin-bottom: 0;">Bạn chưa có lịch hẹn nào được ghi nhận.</p>
+                <a href="<?php echo home_url('/dat-lich/'); ?>" style="display: inline-block; margin-top: 15px; color: #005086; font-weight: 700; text-decoration: none;">Đặt lịch ngay &raquo;</a>
+            </div>
+        <?php endif; ?>
+    </div>
+    <style>
+        .clinic-history-container { max-width: 1000px; margin: 40px auto; padding: 40px; background: #fff; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.05); }
+        .clinic-history-table { width: 100%; border-collapse: collapse; min-width: 600px; }
+        .clinic-history-table th { text-align: left; padding: 15px; background: #f8fafc; color: #4a5568; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; border-bottom: 2px solid #edf2f7; }
+        .clinic-history-table td { padding: 20px 15px; border-bottom: 1px solid #f0f4f8; vertical-align: middle; }
+        .status-badge { display: inline-block; padding: 6px 14px; border-radius: 50px; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+        .status-pending { background: #fefcbf; color: #744210; }
+        .status-confirmed { background: #c6f6d5; color: #22543d; }
+        .status-cancelled { background: #fed7d7; color: #822727; }
+        @media (max-width: 600px) { .clinic-history-container { padding: 20px; } }
+    </style>
+    <?php
+    return ob_get_clean();
+}
+add_shortcode('clinic_booking_history', 'clinic_booking_history_shortcode');
+
+/**
+ * Shortcode for User Account Settings (Profile & Password)
+ */
+function clinic_user_settings_shortcode() {
+    if ( ! is_user_logged_in() ) {
+        return '<div class="clinic-auth-container"><p style="text-align:center;">Vui lòng <a href="' . home_url('/dang-nhap/') . '" style="color:#005086; font-weight:700;">đăng nhập</a> để chỉnh sửa thông tin.</p></div>';
+    }
+
+    $current_user = wp_get_current_user();
+    $user_id = $current_user->ID;
+    $message = '';
+    $error = '';
+
+    // Xử lý cập nhật thông tin
+    if ( isset( $_POST['update_profile_submit'] ) ) {
+        if ( ! isset( $_POST['profile_nonce'] ) || ! wp_verify_nonce( $_POST['profile_nonce'], 'update_profile_action' ) ) {
+            $error = 'Lỗi bảo mật, vui lòng thử lại.';
+        } else {
+            $display_name = sanitize_text_field( $_POST['display_name'] );
+            $user_email = sanitize_email( $_POST['user_email'] );
+            $pass1 = $_POST['pass1'];
+            $pass2 = $_POST['pass2'];
+            
+            $update_data = array( 'ID' => $user_id, 'display_name' => $display_name, 'user_email' => $user_email );
+            
+            // Xử lý đổi mật khẩu nếu có nhập
+            if ( ! empty( $pass1 ) ) {
+                if ( $pass1 === $pass2 ) {
+                    if ( strlen($pass1) < 6 ) {
+                        $error = 'Mật khẩu phải có ít nhất 6 ký tự.';
+                    } else {
+                        $update_data['user_pass'] = $pass1;
+                    }
+                } else {
+                    $error = 'Xác nhận mật khẩu không khớp.';
+                }
+            }
+
+            if ( empty($error) ) {
+                $updated = wp_update_user( $update_data );
+                if ( is_wp_error( $updated ) ) {
+                    $error = $updated->get_error_message();
+                } else {
+                    // Cập nhật User Meta (Các trường mở rộng)
+                    update_user_meta( $user_id, 'phone_number', sanitize_text_field( $_POST['phone_number'] ) );
+                    update_user_meta( $user_id, 'address', sanitize_text_field( $_POST['address'] ) );
+                    update_user_meta( $user_id, 'gender', sanitize_text_field( $_POST['gender'] ) );
+                    update_user_meta( $user_id, 'birthday', sanitize_text_field( $_POST['birthday'] ) );
+                    update_user_meta( $user_id, 'company', sanitize_text_field( $_POST['company'] ) );
+                    update_user_meta( $user_id, 'province', sanitize_text_field( $_POST['province'] ) );
+                    
+                    $message = 'Cập nhật thông tin thành công!';
+                }
+            }
+        }
+    }
+
+    // Lấy dữ liệu hiện tại
+    $phone = get_user_meta( $user_id, 'phone_number', true );
+    $address = get_user_meta( $user_id, 'address', true );
+    $gender = get_user_meta( $user_id, 'gender', true );
+    $birthday = get_user_meta( $user_id, 'birthday', true );
+    $company = get_user_meta( $user_id, 'company', true );
+    $province = get_user_meta( $user_id, 'province', true );
+
+    ob_start();
+    ?>
+    <style>
+        .profile-settings-wrapper { display: flex; gap: 50px; max-width: 1100px; margin: 40px auto; font-family: 'Montserrat', sans-serif; background: #fff; padding: 40px; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.05); }
+        .profile-left { flex: 1; text-align: center; border-right: 1px solid #f0f0f0; padding-right: 50px; }
+        .profile-right { flex: 2; }
+        
+        .avatar-box { width: 160px; height: 160px; margin: 0 auto 20px; border-radius: 50%; overflow: hidden; background: #f8fafc; border: 4px solid #edf2f7; box-shadow: 0 5px 15px rgba(0,0,0,0.05); }
+        .avatar-box img { width: 100%; height: 100%; object-fit: cover; }
+        .user-meta-info h4 { margin: 10px 0 5px; color: #1a365d; font-weight: 800; font-size: 20px; text-transform: uppercase; letter-spacing: 1px; }
+        .user-meta-info p { color: #718096; font-size: 14px; margin-bottom: 25px; }
+        
+        .profile-actions { display: flex; flex-direction: column; gap: 10px; }
+        .btn-profile-sub { width: 100%; padding: 12px; border-radius: 8px; border: 1.5px solid #005086; background: transparent; color: #005086; font-size: 13px; font-weight: 700; cursor: pointer; transition: 0.3s; }
+        .btn-profile-sub:hover { background: #005086; color: #fff; }
+        .btn-profile-sub.primary { background: #005086; color: #fff; }
+        
+        .profile-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+        .profile-input-group { margin-bottom: 20px; }
+        .profile-input-group label { display: block; margin-bottom: 8px; font-size: 13px; font-weight: 700; color: #2d3748; text-transform: uppercase; letter-spacing: 0.5px; }
+        .profile-input-group input, .profile-input-group select { 
+            width: 100%; padding: 14px 18px; border: 2px solid #edf2f7; border-radius: 10px; font-size: 15px; background: #f8fafc; box-sizing: border-box; transition: 0.3s;
+        }
+        .profile-input-group input:focus { border-color: #005086; outline: none; background: #fff; box-shadow: 0 0 0 4px rgba(0,80,134,0.1); }
+        
+        .section-title { font-size: 15px; font-weight: 800; color: #1a365d; margin: 40px 0 20px; padding-bottom: 10px; border-bottom: 2px solid #edf2f7; text-transform: uppercase; }
+        
+        #password-section { display: none; margin-top: 20px; padding-top: 20px; border-top: 1px dashed #edf2f7; }
+
+        .btn-update-main { width: 100%; padding: 18px; background: #005086; color: #fff; border: none; border-radius: 10px; font-size: 16px; font-weight: 800; cursor: pointer; transition: 0.3s; text-transform: uppercase; letter-spacing: 1px; }
+        .btn-update-main:hover { background: #003d66; transform: translateY(-2px); box-shadow: 0 10px 20px rgba(0,80,134,0.2); }
+
+        @media (max-width: 850px) {
+            .profile-settings-wrapper { flex-direction: column; padding: 20px; gap: 30px; }
+            .profile-left { border-right: none; border-bottom: 1px solid #f0f0f0; padding-right: 0; padding-bottom: 30px; }
+            .profile-form-row { grid-template-columns: 1fr; }
+        }
+    </style>
+
+    <div class="profile-settings-wrapper">
+        <!-- CỘT TRÁI -->
+        <div class="profile-left">
+            <div class="avatar-box">
+                <?php echo get_avatar( $user_id, 160 ); ?>
+            </div>
+            <div class="user-meta-info">
+                <h4><?php echo esc_html($current_user->display_name); ?></h4>
+                <p><?php echo esc_html($current_user->user_email); ?></p>
+            </div>
+            <div class="profile-actions">
+                <button type="button" class="btn-profile-sub">Đổi ảnh đại diện</button>
+                <button type="button" class="btn-profile-sub" onclick="clinic_toggle_password()">Đổi mật khẩu</button>
+            </div>
+        </div>
+
+        <!-- CỘT PHẢI -->
+        <div class="profile-right">
+            <?php if ( $message ) echo '<div style="background:#f0fff4; color:#276749; padding:15px; border-radius:10px; margin-bottom:20px; font-weight:600; border-left:5px solid #48bb78;">✅ '.$message.'</div>'; ?>
+            <?php if ( $error ) echo '<div style="background:#fff5f5; color:#c53030; padding:15px; border-radius:10px; margin-bottom:20px; font-weight:600; border-left:5px solid #f56565;">❌ '.$error.'</div>'; ?>
+
+            <form method="post" novalidate>
+                <?php wp_nonce_field( 'update_profile_action', 'profile_nonce' ); ?>
+                
+                <div class="section-title">Thông tin cơ bản</div>
+                <div class="profile-form-row">
+                    <div class="profile-input-group">
+                        <label>Họ và tên</label>
+                        <input type="text" name="display_name" value="<?php echo esc_attr($current_user->display_name); ?>" required>
+                    </div>
+                    <div class="profile-input-group">
+                        <label>Email liên lạc</label>
+                        <input type="email" name="user_email" value="<?php echo esc_attr($current_user->user_email); ?>" required>
+                    </div>
+                </div>
+
+                <div class="profile-form-row">
+                    <div class="profile-input-group">
+                        <label>Số điện thoại</label>
+                        <input type="tel" name="phone_number" value="<?php echo esc_attr($phone); ?>" placeholder="Ví dụ: 0912345678">
+                    </div>
+                    <div class="profile-input-group">
+                        <label>Ngày sinh</label>
+                        <input type="date" name="birthday" value="<?php echo esc_attr($birthday); ?>">
+                    </div>
+                </div>
+
+                <div class="profile-input-group">
+                    <label>Địa chỉ hiện tại</label>
+                    <input type="text" name="address" value="<?php echo esc_attr($address); ?>" placeholder="Số nhà, tên đường, phường/xã...">
+                </div>
+
+                <div class="profile-form-row">
+                    <div class="profile-input-group">
+                        <label>Giới tính</label>
+                        <select name="gender">
+                            <option value="Nam" <?php selected($gender, 'Nam'); ?>>Nam</option>
+                            <option value="Nữ" <?php selected($gender, 'Nữ'); ?>>Nữ</option>
+                            <option value="Khác" <?php selected($gender, 'Khác'); ?>>Khác</option>
+                        </select>
+                    </div>
+                    <div class="profile-input-group">
+                        <label>Tỉnh / Thành phố</label>
+                        <input type="text" name="province" value="<?php echo esc_attr($province); ?>" placeholder="Ví dụ: Hà Nội">
+                    </div>
+                </div>
+
+                <div class="profile-input-group">
+                    <label>Công ty / Tổ chức</label>
+                    <input type="text" name="company" value="<?php echo esc_attr($company); ?>" placeholder="Nơi làm việc (nếu có)">
+                </div>
+
+                <div id="password-section">
+                    <div class="section-title" style="margin-top: 0;">Đổi mật khẩu mới</div>
+                    <div class="profile-form-row">
+                        <div class="profile-input-group">
+                            <label>Mật khẩu mới</label>
+                            <input type="password" name="pass1" placeholder="Nhập mật khẩu mới">
+                        </div>
+                        <div class="profile-input-group">
+                            <label>Xác nhận mật khẩu</label>
+                            <input type="password" name="pass2" placeholder="Nhập lại mật khẩu mới">
+                        </div>
+                    </div>
+                </div>
+
+                <button type="submit" name="update_profile_submit" class="btn-update-main">Cập nhật hồ sơ</button>
+            </form>
+        </div>
+    </div>
+    <script>
+        function clinic_toggle_password() {
+            var x = document.getElementById("password-section");
+            if (x.style.display === "none" || x.style.display === "") {
+                x.style.display = "block";
+                x.scrollIntoView({behavior: 'smooth'});
+            } else {
+                x.style.display = "none";
+            }
+        }
+    </script>
+    <?php
+    return ob_get_clean();
+}
+add_shortcode( 'clinic_user_settings', 'clinic_user_settings_shortcode' );
 ?>
