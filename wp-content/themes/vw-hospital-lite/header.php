@@ -15,6 +15,21 @@
   <meta charset="<?php bloginfo( 'charset' ); ?>">
   <meta name="viewport" content="width=device-width">
   <?php wp_head(); ?>
+  <style id="auth-buttons-style">
+    .header-right-wrap { display: flex; align-items: center; gap: 15px; justify-content: flex-end; }
+    .auth-buttons { display: flex; gap: 8px; }
+    .btn-auth { display: inline-block; padding: 7px 16px; border-radius: 4px; font-size: 12px; font-weight: 700; text-decoration: none !important; transition: all 0.2s ease; white-space: nowrap; text-transform: uppercase; }
+    .btn-login { color: #005086 !important; border: 1.5px solid #005086; background: transparent; }
+    .btn-login:hover { background: #eef6fc; }
+    .btn-register { background: #005086; color: #fff !important; border: 1.5px solid #005086; }
+    .btn-register:hover { background: #003d66; border-color: #003d66; transform: translateY(-1px); }
+    .btn-logout { color: #666 !important; font-size: 11px; text-transform: none; border-bottom: 1px solid transparent; padding: 5px 0; border-radius: 0; }
+    .btn-logout:hover { border-bottom-color: #666; }
+    .user-welcome { font-size: 13px; color: #333; font-weight: 600; margin-right: 5px; }
+    @media (max-width: 991px) { 
+        .header-right-wrap { justify-content: center; margin-top: 10px; }
+    }
+  </style>
 </head>
 
 <body <?php body_class(); ?>>
@@ -34,7 +49,7 @@
         if ( 'Disable' == $vw_hospital_lite_searchbox ) {
           $colmd = 'col-lg-12 col-md-12';
         } else { 
-          $colmd = 'col-lg-9 col-md-7';
+          $colmd = 'col-lg-8 col-md-7';
         } 
     ?>
     <?php if( get_theme_mod( 'vw_hospital_lite_topbar_hide_show', true) == 1 || get_theme_mod( 'vw_hospital_lite_resp_topbar_hide_show', true) == 1) { ?>
@@ -142,9 +157,22 @@
             </div>
           </div>
           <?php if ( 'Disable' != $vw_hospital_lite_searchbox ) {?>
-            <div class="col-lg-3 col-md-5 align-self-center">
-              <div class="search-icon position-relative">
-                <?php get_search_form(); ?>
+            <div class="col-lg-4 col-md-5 align-self-center">
+              <div class="header-right-wrap">
+                <div class="search-icon position-relative">
+                  <?php get_search_form(); ?>
+                </div>
+                <div class="auth-buttons">
+                  <?php if ( is_user_logged_in() ) : 
+                    $current_user = wp_get_current_user();
+                  ?>
+                    <span class="user-welcome">Chào, <?php echo esc_html($current_user->display_name); ?></span>
+                    <a href="<?php echo wp_logout_url( home_url() ); ?>" class="btn-auth btn-logout">Đăng xuất</a>
+                  <?php else : ?>
+                    <a href="<?php echo home_url('/dang-nhap/'); ?>" class="btn-auth btn-login">Đăng nhập</a>
+                    <a href="<?php echo home_url('/dang-ky/'); ?>" class="btn-auth btn-register">Đăng ký</a>
+                  <?php endif; ?>
+                </div>
               </div>
             </div>
           <?php } ?>

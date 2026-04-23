@@ -1613,4 +1613,289 @@ function cb_ajax_get_specialties() {
 
     wp_send_json_success($result);
 }
+
+/**
+ * Redirect logged in users away from login/register pages
+ */
+add_action( 'template_redirect', 'clinic_auth_redirect_logged_in_users' );
+function clinic_auth_redirect_logged_in_users() {
+    if ( is_user_logged_in() ) {
+        if ( is_page('dang-nhap') || is_page('dang-ky') ) {
+            wp_safe_redirect( home_url() );
+            exit;
+        }
+    }
+}
+
+/**
+ * Shared Auth Styles
+ */
+add_action('wp_head', 'clinic_auth_styles');
+function clinic_auth_styles() {
+    if ( is_page('dang-nhap') || is_page('dang-ky') ) {
+        ?>
+        <style>
+            .clinic-auth-page { background: #f7fafc; min-height: 80vh; display: flex; align-items: center; justify-content: center; font-family: 'Montserrat', sans-serif; }
+            .clinic-auth-container { max-width: 480px; width: 100%; margin: 40px auto; padding: 50px; background: #fff; border-radius: 20px; box-shadow: 0 20px 50px rgba(0,0,0,0.05); border: 1px solid #f0f0f0; }
+            .clinic-auth-form h3 { text-align: center; color: #1a365d; margin-bottom: 35px; text-transform: uppercase; font-weight: 800; letter-spacing: 2px; font-size: 24px; }
+            .clinic-auth-form .input-group { margin-bottom: 25px; }
+            .clinic-auth-form label { display: block; margin-bottom: 8px; font-weight: 600; color: #4a5568; font-size: 14px; }
+            .clinic-auth-form input[type="text"], .clinic-auth-form input[type="password"], .clinic-auth-form input[type="email"] { 
+                width: 100% !important; padding: 16px 20px !important; border: 2px solid #edf2f7 !important; border-radius: 12px !important; 
+                font-size: 16px !important; transition: all 0.3s ease !important; background: #f8fafc !important; box-sizing: border-box !important;
+            }
+            .clinic-auth-form input:focus { border-color: #005086 !important; outline: none !important; background: #fff !important; box-shadow: 0 0 0 4px rgba(0,80,134,0.1) !important; }
+            .clinic-auth-btn { 
+                width: 100%; padding: 18px; background: #005086; color: #fff; border: none; border-radius: 12px; 
+                font-weight: 800; cursor: pointer; transition: all 0.3s; font-size: 17px; text-transform: uppercase; letter-spacing: 1px;
+                margin-top: 10px;
+            }
+            .clinic-auth-btn:hover { background: #003d66; transform: translateY(-2px); box-shadow: 0 8px 20px rgba(0,80,134,0.2); }
+            .clinic-auth-footer { text-align: center; margin-top: 30px; font-size: 15px; color: #718096; }
+            .clinic-auth-footer a { color: #005086; font-weight: 700; text-decoration: none; border-bottom: 2px solid transparent; transition: all 0.2s; }
+            .clinic-auth-footer a:hover { border-bottom-color: #005086; }
+            .clinic-auth-status { margin-bottom: 25px; }
+            .has-error { border-color: #e53935 !important; background: #fff8f8 !important; }
+            .cbf-error-msg { color: #e53935; font-size: 12px; margin-top: 5px; display: block; font-weight: 500; }
+        </style>
+        <?php
+    }
+}
+
+/**
+ * Shared Auth Scripts for Validation
+ */
+add_action('wp_footer', 'clinic_auth_scripts');
+function clinic_auth_scripts() {
+    if ( is_page('dang-nhap') || is_page('dang-ky') ) {
+        ?>
+        <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            var forms = document.querySelectorAll('.clinic-auth-form');
+            var messages = {
+                'full_name': 'Vui lòng nhập họ và tên',
+                'user_login': 'Vui lòng nhập tên đăng nhập',
+                'user_email': 'Vui lòng nhập địa chỉ email hợp lệ',
+                'user_pass': 'Vui lòng nhập mật khẩu',
+                'log': 'Vui lòng nhập tên đăng nhập hoặc email',
+                'pwd': 'Vui lòng nhập mật khẩu'
+            };
+
+            forms.forEach(function(form) {
+                form.onsubmit = function(e) {
+                    var isValid = true;
+                    var firstInvalid = null;
+                    
+                    form.querySelectorAll('.cbf-error-msg').forEach(function(msg) { msg.remove(); });
+                    
+                    var inputs = form.querySelectorAll('input[required]');
+                    inputs.forEach(function(el) {
+                        var val = el.value.trim();
+                        var fieldValid = true;
+                        
+                        if (!val) {
+                            fieldValid = false;
+                        } else if (el.type === 'email' && !val.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
+                            fieldValid = false;
+                        }
+
+                        if (!fieldValid) {
+                            el.classList.add('has-error');
+                            isValid = false;
+                            if (!firstInvalid) firstInvalid = el;
+                            
+                            var errorMsg = document.createElement('span');
+                            errorMsg.className = 'cbf-error-msg';
+                            errorMsg.innerText = messages[el.name] || 'Thông tin này là bắt buộc';
+                            el.parentNode.insertBefore(errorMsg, el.nextSibling);
+                        } else {
+                            el.classList.remove('has-error');
+                        }
+
+                        // Xóa lỗi khi nhập lại
+                        el.oninput = function() {
+                            if (this.value.trim()) {
+                                this.classList.remove('has-error');
+                                var next = this.nextSibling;
+                                if (next && next.classList && next.classList.contains('cbf-error-msg')) {
+                                    next.remove();
+                                }
+                            }
+                        };
+                    });
+
+                    if (!isValid) {
+                        e.preventDefault();
+                        if (firstInvalid) firstInvalid.focus();
+                    }
+                };
+            });
+        });
+        </script>
+        <?php
+    }
+}
+
+/**
+ * Shortcode for Custom Login Form
+ */
+function clinic_login_form_shortcode() {
+    if ( is_user_logged_in() ) {
+        return '<div class="clinic-auth-container"><p>Bạn đã đăng nhập. <a href="' . wp_logout_url( home_url() ) . '">Đăng xuất</a></p></div>';
+    }
+
+    $output = '';
+    if ( isset( $_POST['clinic_login_submit'] ) ) {
+        $creds = array(
+            'user_login'    => sanitize_text_field( $_POST['log'] ),
+            'user_password' => $_POST['pwd'],
+            'remember'      => isset( $_POST['rememberme'] ),
+        );
+
+        $user = wp_signon( $creds, false );
+
+        if ( is_wp_error( $user ) ) {
+            $output .= '<p style="color:red; text-align:center;">' . $user->get_error_message() . '</p>';
+        } else {
+            echo '<script>window.location.href="' . home_url() . '";</script>';
+            exit;
+        }
+    }
+
+    ob_start();
+    ?>
+    <div class="clinic-auth-page">
+        <div class="clinic-auth-container">
+            <div class="clinic-auth-status"><?php echo $output; ?></div>
+            <form method="post" class="clinic-auth-form" id="clinic-login-form" novalidate>
+                <h3>Đăng nhập</h3>
+                <div class="input-group">
+                    <label>Tài khoản</label>
+                    <input type="text" name="log" placeholder="Tên đăng nhập hoặc Email" required>
+                </div>
+                <div class="input-group">
+                    <label>Mật khẩu</label>
+                    <input type="password" name="pwd" placeholder="Nhập mật khẩu" required>
+                </div>
+                <div style="font-size: 14px; margin-bottom: 20px;">
+                    <label style="display: flex; align-items: center; cursor: pointer; font-weight: normal;">
+                        <input type="checkbox" name="rememberme" style="width: auto !important; margin-right: 8px !important;"> Ghi nhớ đăng nhập
+                    </label>
+                </div>
+                <button type="submit" name="clinic_login_submit" class="clinic-auth-btn">Đăng nhập</button>
+                <div class="clinic-auth-footer">
+                    Chưa có tài khoản? <a href="<?php echo home_url('/dang-ky/'); ?>">Đăng ký ngay</a>
+                </div>
+            </form>
+        </div>
+    </div>
+    <style>
+        /* Sửa lỗi nhỏ cho checkbox */
+        #clinic-login-form input[type="checkbox"] { width: auto !important; height: auto !important; padding: 0 !important; margin: 0 10px 0 0 !important; }
+    </style>
+    <?php
+    return $output . ob_get_clean();
+}
+add_shortcode( 'clinic_login_form', 'clinic_login_form_shortcode' );
+
+/**
+ * Shortcode for Custom Registration Form
+ */
+function clinic_register_form_shortcode() {
+    if ( is_user_logged_in() ) {
+        return '<div class="clinic-auth-container"><p>Bạn đã đăng nhập.</p></div>';
+    }
+
+    $output = '';
+    if ( isset( $_POST['clinic_register_submit'] ) ) {
+        $username = sanitize_user( $_POST['user_login'] );
+        $email    = sanitize_email( $_POST['user_email'] );
+        $password = $_POST['user_pass'];
+        $fullname = sanitize_text_field( $_POST['full_name'] );
+
+        $errors = new WP_Error();
+
+        if ( empty( $username ) || empty( $email ) || empty( $password ) ) {
+            $errors->add( 'field', 'Vui lòng điền đầy đủ các trường bắt buộc.' );
+        }
+        if ( username_exists( $username ) ) {
+            $errors->add( 'user_name', 'Tên đăng nhập đã tồn tại.' );
+        }
+        if ( ! is_email( $email ) ) {
+            $errors->add( 'email_invalid', 'Địa chỉ Email không hợp lệ.' );
+        }
+        if ( email_exists( $email ) ) {
+            $errors->add( 'email_exists', 'Địa chỉ Email này đã được đăng ký.' );
+        }
+
+        if ( empty( $errors->get_error_messages() ) ) {
+            $userdata = array(
+                'user_login'   => $username,
+                'user_pass'    => $password,
+                'user_email'   => $email,
+                'display_name' => $fullname,
+                'role'         => 'subscriber'
+            );
+            
+            $user_id = wp_insert_user( $userdata );
+
+            if ( ! is_wp_error( $user_id ) ) {
+                // Tự động đăng nhập sau khi đăng ký thành công
+                $creds = array(
+                    'user_login'    => $username,
+                    'user_password' => $password,
+                    'remember'      => true
+                );
+                wp_signon( $creds, false );
+
+                $output .= '<div style="background: #d4edda; color: #155724; padding: 15px; border-radius: 8px; margin-bottom: 20px; text-align: center;">
+                    <strong>✅ Đăng ký thành công!</strong><br>Hệ thống đang chuyển hướng...
+                </div>';
+                $output .= '<script>setTimeout(function(){ window.location.href="' . home_url() . '"; }, 2000);</script>';
+            } else {
+                $output .= '<p style="color:red; text-align:center; font-weight:bold;">❌ Lỗi: ' . $user_id->get_error_message() . '</p>';
+            }
+        } else {
+            $output .= '<div style="background: #f8d7da; color: #721c24; padding: 15px; border-radius: 8px; margin-bottom: 20px;">';
+            foreach ( $errors->get_error_messages() as $error ) {
+                $output .= '• ' . $error . '<br>';
+            }
+            $output .= '</div>';
+        }
+    }
+
+    ob_start();
+    ?>
+    <div class="clinic-auth-page">
+        <div class="clinic-auth-container">
+            <div class="clinic-auth-status"><?php echo $output; ?></div>
+            <form method="post" class="clinic-auth-form" id="clinic-register-form" novalidate>
+                <h3>Đăng ký tài khoản</h3>
+                <div class="input-group">
+                    <label>Họ và tên</label>
+                    <input type="text" name="full_name" placeholder="Nhập họ tên đầy đủ" required>
+                </div>
+                <div class="input-group">
+                    <label>Tên đăng nhập</label>
+                    <input type="text" name="user_login" placeholder="Sử dụng tên viết liền, không dấu" required>
+                </div>
+                <div class="input-group">
+                    <label>Địa chỉ Email</label>
+                    <input type="email" name="user_email" placeholder="example@gmail.com" required>
+                </div>
+                <div class="input-group">
+                    <label>Mật khẩu</label>
+                    <input type="password" name="user_pass" placeholder="••••••••" required>
+                </div>
+                <button type="submit" name="clinic_register_submit" class="clinic-auth-btn">Tham gia ngay</button>
+                <div class="clinic-auth-footer">
+                    Đã có tài khoản? <a href="<?php echo home_url('/dang-nhap/'); ?>">Đăng nhập tại đây</a>
+                </div>
+            </form>
+        </div>
+    </div>
+    <?php
+    return ob_get_clean();
+}
+add_shortcode( 'clinic_register_form', 'clinic_register_form_shortcode' );
 ?>
