@@ -186,6 +186,19 @@
                             <i class="fas fa-chevron-down" style="font-size: 10px;"></i>
                         </button>
                         <div class="user-dropdown-content">
+                            <?php 
+                            // Kiểm tra nếu là bác sĩ thì hiện thêm link Quản lý lịch
+                            $is_doctor_linked = get_posts(array(
+                                'post_type' => 'doctor', 
+                                'meta_key' => '_doctor_user_id', 
+                                'meta_value' => $current_user->ID,
+                                'posts_per_page' => 1
+                            ));
+                            if ($is_doctor_linked) : ?>
+                                <a href="<?php echo home_url('/dashboard-bac-si/'); ?>" style="color: #005086; background: #ebf8ff;"><i class="fas fa-calendar-check"></i> <strong>Quản lý lịch hẹn</strong></a>
+                                <hr>
+                            <?php endif; ?>
+
                             <a href="<?php echo home_url('/tai-khoan/'); ?>"><i class="fas fa-user-cog"></i> Cài đặt tài khoản</a>
                             <a href="<?php echo home_url('/lich-su/'); ?>"><i class="fas fa-history"></i> Lịch sử đặt lịch</a>
                             <hr>

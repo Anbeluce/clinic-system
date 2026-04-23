@@ -61,6 +61,15 @@ function create_doctor_post_type() {
     register_post_type( 'doctor', $args );
     add_theme_support( 'post-thumbnails' ); // Kích hoạt tính năng ảnh đại diện
 
+    // Thêm role Bác sĩ nếu chưa có
+    if ( ! get_role( 'doctor' ) ) {
+        add_role( 'doctor', 'Bác sĩ', array(
+            'read'         => true,
+            'edit_posts'   => false,
+            'delete_posts' => false,
+        ) );
+    }
+
     // Taxonomy: Chi nhánh
     register_taxonomy('clinic_branch', array('doctor'), array(
         'hierarchical'      => true,
@@ -135,6 +144,7 @@ function clinic_booking_form_shortcode() {
             update_post_meta( $post_id, '_clinic', $clinic );
             update_post_meta( $post_id, '_specialty', $specialty );
             update_post_meta( $post_id, '_selected_doctor', $selected_doctor );
+            update_post_meta( $post_id, '_doctor_id', sanitize_text_field( $_POST['doctor_id'] ?? '' ) );
             update_post_meta( $post_id, '_booking_date', $booking_date );
             update_post_meta( $post_id, '_booking_time', $booking_time );
             update_post_meta( $post_id, '_registrant_name', $registrant_name );
@@ -163,7 +173,7 @@ function clinic_booking_form_shortcode() {
             $message .= "- Chuyên khoa: " . $specialty . "\n";
             $message .= "- Bác sĩ yêu cầu: " . $selected_doctor . "\n";
             $message .= "- Ngày khám: " . $booking_date . " " . $booking_time . "\n";
-            $message .= "- Họ tên người khám: " . $patient_name . " (" . $patient_gender . ", sinh ngày: " . $patient_dob . ")\n";
+            $message .= "- Họ tên bệnh nhân: " . $patient_name . " (" . $patient_gender . ", sinh ngày: " . $patient_dob . ")\n";
             $message .= "- Số điện thoại liên hệ: " . $patient_phone . "\n";
             $message .= "- Triệu chứng/Ghi chú: " . $symptoms . "\n\n";
             $message .= "Vui lòng giữ điện thoại, bộ phận Lễ tân của chúng tôi sẽ sớm liên hệ lại để chốt giờ khám chính xác cho bạn.\n\n";
@@ -174,7 +184,7 @@ function clinic_booking_form_shortcode() {
             $admin_message .= "- Người đăng ký: " . $registrant_name . "\n";
             $admin_message .= "- Điện thoại: " . $patient_phone . "\n";
             $admin_message .= "- Email: " . $patient_email . "\n";
-            $admin_message .= "- Người khám: " . $patient_name . " (" . $patient_gender . ", sinh ngày: " . $patient_dob . ")\n";
+            $admin_message .= "- Họ tên bệnh nhân: " . $patient_name . " (" . $patient_gender . ", sinh ngày: " . $patient_dob . ")\n";
             $admin_message .= "- Phòng khám: " . $clinic . "\n";
             $admin_message .= "- Chuyên khoa: " . $specialty . "\n";
             $admin_message .= "- Bác sĩ yêu cầu: " . $selected_doctor . "\n";
@@ -196,7 +206,7 @@ function clinic_booking_form_shortcode() {
                                 array('name' => 'Người đăng ký', 'value' => $registrant_name, 'inline' => true),
                                 array('name' => 'Điện thoại', 'value' => $patient_phone, 'inline' => true),
                                 array('name' => 'Email', 'value' => empty($patient_email) ? 'Không có' : $patient_email, 'inline' => true),
-                                array('name' => 'Người khám', 'value' => $patient_name . ' (' . $patient_gender . ')', 'inline' => true),
+                                array('name' => 'Họ tên bệnh nhân', 'value' => $patient_name . ' (' . $patient_gender . ')', 'inline' => true),
                                 array('name' => 'Ngày sinh', 'value' => empty($patient_dob) ? 'Không có' : $patient_dob, 'inline' => true),
                                 array('name' => 'Phòng khám', 'value' => $clinic, 'inline' => true),
                                 array('name' => 'Chuyên khoa', 'value' => $specialty, 'inline' => true),
@@ -285,8 +295,9 @@ function clinic_booking_form_shortcode() {
 
     // Giao diện HTML của Form
     // 1. Nhúng Flatpickr & Google Fonts
-    wp_enqueue_style('google-fonts', 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    wp_enqueue_style('google-fonts', 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@600;700;800&display=swap');
     wp_enqueue_style('flatpickr-css', 'https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css');
+    wp_enqueue_style('font-awesome', 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css');
     wp_enqueue_script('flatpickr-js', 'https://cdn.jsdelivr.net/npm/flatpickr', array(), null, true);
     
     ?>
@@ -541,11 +552,12 @@ function clinic_booking_form_shortcode() {
                                 <?php
                                 if ($doctors_list) {
                                     foreach ($doctors_list as $doc) {
-                                        echo '<option value="' . esc_attr($doc->post_title) . '">' . esc_html($doc->post_title) . '</option>';
+                                        echo '<option value="' . esc_attr($doc->post_title) . '" data-doctor-id="' . esc_attr($doc->ID) . '">' . esc_html($doc->post_title) . '</option>';
                                     }
                                 }
                                 ?>
                             </select>
+                            <input type="hidden" name="doctor_id" id="doctor_id_hidden" value="">
                         </div>
                     </div>
 
@@ -766,11 +778,13 @@ function clinic_booking_form_shortcode() {
                                     var opt = document.createElement('option');
                                     opt.value = doc.title;
                                     opt.textContent = doc.title;
+                                    opt.setAttribute('data-doctor-id', doc.id);
                                     doctorSelect.appendChild(opt);
                                 });
                                 // 2. Cập nhật Danh sách Card bên phải
                                 if(doctorsDisplay) doctorsDisplay.innerHTML = res.data.html;
                                 initPagination(); // Gán lại sự kiện phân trang
+                                updateDoctorHiddenId(); // Cập nhật lại ID sau khi AJAX load xong
                             } else {
                                 doctorSelect.innerHTML = '<option value="">Không có bác sĩ phù hợp</option>';
                                 if(doctorsDisplay) doctorsDisplay.innerHTML = '<div style="padding: 20px; text-align: center; color: #718096;">Không tìm thấy bác sĩ nào thuộc chi nhánh/khoa này.</div>';
@@ -840,11 +854,25 @@ function clinic_booking_form_shortcode() {
 
             clinicSelect.addEventListener('change', fetchSpecialties);
             specialtySelect.addEventListener('change', fetchDoctors);
+            
+            // Hàm cập nhật ID bác sĩ vào hidden field
+            function updateDoctorHiddenId() {
+                var selectedOption = doctorSelect.options[doctorSelect.selectedIndex];
+                var doctorId = selectedOption ? selectedOption.getAttribute('data-doctor-id') : '';
+                document.getElementById('doctor_id_hidden').value = doctorId || '';
+            }
 
-            // Tự động chọn Bác sĩ từ URL (?auto_doctor=ID)
-            function autoSelectDoctorFromURL() {
+            // Cập nhật khi người dùng chọn thủ công
+            doctorSelect.addEventListener('change', updateDoctorHiddenId);
+            
+            // Cập nhật ngay khi tải trang (nếu đã có sẵn bác sĩ)
+            updateDoctorHiddenId();
+
+            // Tự động chọn Bác sĩ hoặc Chuyên khoa từ URL (?auto_doctor=ID hoặc ?auto_specialty=ID)
+            function autoSelectFromURL() {
                 var urlParams = new URLSearchParams(window.location.search);
                 var autoDoctorId = urlParams.get('auto_doctor');
+                var autoSpecialtyId = urlParams.get('auto_specialty');
                 
                 if (autoDoctorId) {
                     var xhr = new XMLHttpRequest();
@@ -877,10 +905,10 @@ function clinic_booking_form_shortcode() {
                                     for (var i=0; i<doctorSelect.options.length; i++) {
                                         if (doctorSelect.options[i].value == res.data.doctor_title) {
                                             doctorSelect.selectedIndex = i;
+                                            updateDoctorHiddenId(); 
                                             break;
                                         }
                                     }
-                                    // Cuộn xuống form đặt lịch
                                     var formEl = document.getElementById('clinic-booking-form');
                                     if(formEl) formEl.scrollIntoView({ behavior: 'smooth' });
                                 });
@@ -888,9 +916,20 @@ function clinic_booking_form_shortcode() {
                         }
                     };
                     xhr.send('action=cb_get_doctor_info&doctor_id=' + autoDoctorId);
+                } else if (autoSpecialtyId) {
+                    // Nếu chỉ có auto_specialty
+                    for (var i=0; i<specialtySelect.options.length; i++) {
+                        if (specialtySelect.options[i].getAttribute('data-id') == autoSpecialtyId) {
+                            specialtySelect.selectedIndex = i;
+                            fetchDoctors();
+                            var formEl = document.getElementById('clinic-booking-form');
+                            if(formEl) formEl.scrollIntoView({ behavior: 'smooth' });
+                            break;
+                        }
+                    }
                 }
             }
-            autoSelectDoctorFromURL();
+            autoSelectFromURL();
 
             btnNext.addEventListener('click', function() {
                 var valid = true;
@@ -987,7 +1026,7 @@ function clinic_booking_add_meta_box() {
         'high'
     );
 
-    // Meta box cho bác sĩ
+    // Meta box cho bác sĩ - Ảnh
     add_meta_box(
         'doctor_details',
         'Ảnh Đại Diện (Bằng Link URL)',
@@ -996,6 +1035,35 @@ function clinic_booking_add_meta_box() {
         'normal',
         'high'
     );
+
+    // Meta box cho bác sĩ - Tài khoản liên kết
+    add_meta_box(
+        'doctor_account_link',
+        'Liên kết Tài khoản Bác sĩ',
+        'doctor_account_link_meta_box_html',
+        'doctor',
+        'normal',
+        'high'
+    );
+}
+
+function doctor_account_link_meta_box_html( $post ) {
+    $linked_user_id = get_post_meta( $post->ID, '_doctor_user_id', true );
+    $users = get_users( array( 'fields' => array( 'ID', 'display_name', 'user_email' ) ) );
+    
+    wp_nonce_field( 'doctor_account_save_meta', 'doctor_account_meta_nonce' );
+    
+    echo '<div style="margin-bottom: 10px;">';
+    echo '<label for="doctor_user_id"><strong>Chọn tài khoản người dùng:</strong></label><br>';
+    echo '<select id="doctor_user_id" name="doctor_user_id" style="width: 100%; margin-top: 5px;">';
+    echo '<option value="">-- Không liên kết --</option>';
+    foreach ( $users as $user ) {
+        $selected = ( $linked_user_id == $user->ID ) ? 'selected' : '';
+        echo '<option value="' . esc_attr( $user->ID ) . '" ' . $selected . '>' . esc_html( $user->display_name ) . ' (' . esc_html( $user->user_email ) . ')</option>';
+    }
+    echo '</select>';
+    echo '<p class="description">Khi liên kết, bác sĩ có thể đăng nhập bằng tài khoản này để xem danh sách lịch hẹn của chính mình.</p>';
+    echo '</div>';
 }
 
 function doctor_meta_box_html( $post ) {
@@ -1089,16 +1157,27 @@ function clinic_booking_save_meta_box_data( $post_id ) {
 add_action( 'save_post', 'doctor_save_meta_box_data' );
 function doctor_save_meta_box_data( $post_id ) {
     if ( ! isset( $_POST['doctor_meta_nonce'] ) || ! wp_verify_nonce( $_POST['doctor_meta_nonce'], 'doctor_save_meta' ) ) {
-        return;
+        // Nếu không có nonce của ảnh, kiểm tra nonce của tài khoản
+        if ( ! isset( $_POST['doctor_account_meta_nonce'] ) || ! wp_verify_nonce( $_POST['doctor_account_meta_nonce'], 'doctor_account_save_meta' ) ) {
+            return;
+        }
     }
+
     if ( defined( 'DOING_AUTOSAVE' ) && DOING_AUTOSAVE ) {
         return;
     }
     if ( ! current_user_can( 'edit_post', $post_id ) ) {
         return;
     }
+
+    // Lưu link ảnh
     if ( isset( $_POST['doctor_image_url'] ) ) {
         update_post_meta( $post_id, '_doctor_image_url', sanitize_url( $_POST['doctor_image_url'] ) );
+    }
+
+    // Lưu ID tài khoản liên kết
+    if ( isset( $_POST['doctor_user_id'] ) ) {
+        update_post_meta( $post_id, '_doctor_user_id', sanitize_text_field( $_POST['doctor_user_id'] ) );
     }
 }
 
@@ -1428,6 +1507,10 @@ function cb_bulk_add_doctors_page() {
                 $short_desc      = isset($parts[4]) ? str_replace('[n]', "\n", $parts[4]) : '';
                 $full_detail     = isset($parts[5]) ? str_replace('[n]', "\n", $parts[5]) : '';
 
+                $doctor_email    = isset($parts[6]) ? sanitize_email($parts[6]) : '';
+                $doctor_user     = isset($parts[7]) ? sanitize_user($parts[7], true) : '';
+                $doctor_pass     = isset($parts[8]) ? $parts[8] : '';
+
                 $existing_doctor = get_page_by_title($doctor_name, OBJECT, 'doctor');
                 $post_data = array(
                     'post_title'   => $doctor_name,
@@ -1459,6 +1542,36 @@ function cb_bulk_add_doctors_page() {
                         $branch_id = !is_wp_error($branch_term) ? $branch_term['term_id'] : (is_wp_error($branch_term) && isset($branch_term->error_data['term_exists']) ? $branch_term->error_data['term_exists'] : 0);
                         if ($branch_id) wp_set_object_terms($doctor_id, intval($branch_id), 'clinic_branch');
                     }
+
+                    // Xử lý tạo tài khoản WordPress cho bác sĩ
+                    if (!empty($doctor_email)) {
+                        $user_id = email_exists($doctor_email);
+                        if (!$user_id) {
+                            // Ưu tiên dùng Username người dùng nhập, nếu không có mới tự tạo
+                            $username = !empty($doctor_user) ? $doctor_user : sanitize_user(str_replace(' ', '', strtolower(remove_accents($doctor_name))), true);
+                            
+                            if (username_exists($username)) {
+                                $username .= '_' . rand(100, 999);
+                            }
+                            
+                            // Nếu không có mật khẩu thì dùng mặc định
+                            $password = !empty($doctor_pass) ? $doctor_pass : 'Bacsi123@';
+                            
+                            $user_id = wp_create_user($username, $password, $doctor_email);
+                            if (!is_wp_error($user_id)) {
+                                wp_update_user(array(
+                                    'ID'           => $user_id,
+                                    'display_name' => $doctor_name,
+                                    'role'         => 'doctor'
+                                ));
+                            }
+                        }
+                        
+                        if ($user_id && !is_wp_error($user_id)) {
+                            update_post_meta($doctor_id, '_doctor_user_id', $user_id);
+                        }
+                    }
+
                     $count++;
                 }
             }
@@ -1476,11 +1589,13 @@ function cb_bulk_add_doctors_page() {
                 <tr valign="top">
                     <th scope="row">Danh sách dữ liệu</th>
                     <td>
-                        <textarea name="cb_bulk_doctors_data" rows="15" style="width: 100%; max-width: 800px; font-family: monospace;" placeholder="Tên Bác Sĩ | Khoa | Chi Nhánh | Link Ảnh | Giới thiệu ngắn | Chi tiết thành tựu&#10;Nguyễn Văn A | Nội khoa | Hà Nội | https://link.jpg | Bác sĩ giỏi[n]10 năm kinh nghiệm | Tốt nghiệp ĐH Y[n]Công tác tại viện 108"></textarea>
+                        <textarea name="cb_bulk_doctors_data" rows="15" style="width: 100%; max-width: 800px; font-family: monospace;" placeholder="Tên Bác Sĩ | Khoa | Chi Nhánh | Link Ảnh | Giới thiệu ngắn | Chi tiết thành tựu | Email | Tên đăng nhập | Mật khẩu&#10;Nguyễn Văn A | Nội khoa | Hà Nội | https://link.jpg | Bác sĩ giỏi[n]10 năm kinh nghiệm | Tốt nghiệp ĐH Y[n]Công tác tại viện 108 | bacsia@gmail.com | bs_nguyenvana | 123456aA@"></textarea>
                         <p class="description"> 
-                            - Định dạng: <strong>Tên | Khoa | Chi nhánh | Ảnh | Ngắn | Chi tiết</strong> (Mỗi người 1 dòng).<br>
-                            - Để <strong>xuống dòng</strong> trong nội dung, hãy sử dụng ký hiệu <code>[n]</code>.<br>
-                            - Ví dụ: <code>Tốt nghiệp ĐH Y [n] Công tác tại viện 108</code> sẽ hiển thị thành 2 dòng.
+                            - Định dạng: <strong>Tên | Khoa | Chi nhánh | Ảnh | Ngắn | Chi tiết | Email | Tên đăng nhập | Mật khẩu</strong> (Mỗi người 1 dòng).<br>
+                            - Nếu nhập <strong>Email</strong>, hệ thống sẽ tự động tạo tài khoản WordPress.<br>
+                            - Nếu để trống <strong>Tên đăng nhập</strong>, hệ thống tự tạo từ tên bác sĩ.<br>
+                            - Nếu để trống <strong>Mật khẩu</strong>, mật khẩu mặc định sẽ là <code>Bacsi123@</code>.<br>
+                            - Để <strong>xuống dòng</strong> trong nội dung, hãy sử dụng ký hiệu <code>[n]</code>.
                         </p>
                     </td>
                 </tr>
@@ -1722,6 +1837,10 @@ function clinic_auth_styles() {
             .clinic-auth-footer a { color: #005086; font-weight: 700; text-decoration: none; border-bottom: 2px solid transparent; transition: all 0.2s; }
             .clinic-auth-footer a:hover { border-bottom-color: #005086; }
             .clinic-auth-status { margin-bottom: 25px; }
+            .clinic-auth-error { 
+                background: #fff5f5; color: #c53030; padding: 12px 15px; border-radius: 10px; 
+                font-size: 14px; font-weight: 600; border-left: 4px solid #f56565; margin-bottom: 20px; text-align: center;
+            }
             .has-error { border-color: #e53935 !important; background: #fff8f8 !important; }
             .cbf-error-msg { color: #e53935; font-size: 12px; margin-top: 5px; display: block; font-weight: 500; }
         </style>
@@ -1746,9 +1865,186 @@ function clinic_global_hide_elements() {
 }
 
 /**
- * Shared Auth Scripts for Validation
+ * Shortcode for a Premium Services Showcase Grid
  */
-add_action('wp_footer', 'clinic_auth_scripts');
+function clinic_services_grid_shortcode() {
+    $specialties = get_terms(array(
+        'taxonomy' => 'specialty',
+        'hide_empty' => false,
+    ));
+
+    // Map tên chuyên khoa với icon FontAwesome
+    $icon_map = array(
+        'Nội khoa' => 'fa-stethoscope',
+        'Ngoại khoa' => 'fa-scalpel-path',
+        'Tim mạch' => 'fa-heart-pulse',
+        'Tiêu hóa' => 'fa-stomach',
+        'Hô hấp' => 'fa-lungs',
+        'Thần kinh' => 'fa-brain',
+        'Cơ xương khớp' => 'fa-bone',
+        'Nhi khoa' => 'fa-baby',
+        'Sản phụ khoa' => 'fa-person-pregnant',
+        'Da liễu' => 'fa-hand-dots',
+        'Răng Hàm Mặt' => 'fa-tooth',
+        'Tai Mũi Họng' => 'fa-ear-listen',
+    );
+
+    wp_enqueue_style('google-fonts-showcase', 'https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&display=swap');
+    wp_enqueue_style('font-awesome-showcase', 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css');
+
+    ob_start();
+    ?>
+    <style>
+        .cb-services-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 25px;
+            margin: 40px 0;
+            font-family: 'Inter', sans-serif;
+        }
+        .cb-service-card {
+            background: #ffffff;
+            border-radius: 20px;
+            padding: 35px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.04);
+            border: 1px solid #f0f0f0;
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            overflow: hidden;
+            text-align: left;
+        }
+        .cb-service-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 5px;
+            background: linear-gradient(90deg, #2b6cb0, #4299e1);
+            opacity: 0;
+            transition: 0.3s;
+        }
+        .cb-service-card:hover {
+            transform: translateY(-10px);
+            box-shadow: 0 20px 40px rgba(43,108,176,0.12);
+            border-color: #ebf8ff;
+        }
+        .cb-service-card:hover::before {
+            opacity: 1;
+        }
+        .cb-service-icon {
+            width: 60px;
+            height: 60px;
+            background: #ebf8ff;
+            color: #2b6cb0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 15px;
+            font-size: 24px;
+            margin-bottom: 20px;
+            transition: 0.3s;
+        }
+        .cb-service-card:hover .cb-service-icon {
+            background: #2b6cb0;
+            color: #fff;
+            transform: rotate(-5deg);
+        }
+        .cb-service-card h3 {
+            margin: 0 0 12px 0;
+            font-size: 22px;
+            color: #1a365d;
+            font-family: 'Montserrat', sans-serif;
+            font-weight: 700;
+        }
+        .cb-service-desc {
+            color: #718096;
+            font-size: 15px;
+            line-height: 1.6;
+            margin-bottom: 25px;
+            flex-grow: 1;
+        }
+        .cb-service-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding-top: 20px;
+            border-top: 1px solid #f7fafc;
+        }
+        .cb-service-price {
+            font-weight: 700;
+            color: #2d3748;
+            font-size: 16px;
+        }
+        .cb-service-price span {
+            font-size: 12px;
+            color: #a0aec0;
+            font-weight: 500;
+            display: block;
+        }
+        .cb-btn-book-service {
+            background: #f7fafc;
+            color: #2b6cb0;
+            padding: 10px 20px;
+            border-radius: 10px;
+            text-decoration: none;
+            font-weight: 700;
+            font-size: 14px;
+            transition: 0.3s;
+        }
+        .cb-service-card:hover .cb-btn-book-service {
+            background: #2b6cb0;
+            color: #fff;
+        }
+    </style>
+    
+    <div class="cb-services-grid">
+        <?php 
+        if (!empty($specialties) && !is_wp_error($specialties)) :
+            foreach ($specialties as $spec) :
+                $icon_class = 'fa-user-md'; // Default
+                foreach($icon_map as $key => $icon) {
+                    if (stripos($spec->name, $key) !== false) {
+                        $icon_class = $icon;
+                        break;
+                    }
+                }
+                
+                // Giả lập giá và mô tả (có thể lấy từ term meta nếu bạn đã cài)
+                $price = '200.000đ';
+                if (stripos($spec->name, 'Ngoại') !== false) $price = '250.000đ';
+                
+                $desc = $spec->description;
+                if (empty($desc)) {
+                    $desc = 'Dịch vụ khám và điều trị chuyên sâu chuyên khoa ' . $spec->name . ' với đội ngũ bác sĩ hàng đầu.';
+                }
+        ?>
+            <div class="cb-service-card">
+                <div class="cb-service-icon">
+                    <i class="fa-solid <?php echo $icon_class; ?>"></i>
+                </div>
+                <h3><?php echo esc_html($spec->name); ?></h3>
+                <div class="cb-service-desc">
+                    <?php echo wp_trim_words($desc, 25); ?>
+                </div>
+                <div class="cb-service-footer">
+                    <div class="cb-service-price">
+                        <span>Phí khám từ:</span>
+                        <?php echo $price; ?>
+                    </div>
+                    <a href="<?php echo home_url('/dat-lich/'); ?>?auto_specialty=<?php echo $spec->term_id; ?>" class="cb-btn-book-service">Đặt lịch ngay</a>
+                </div>
+            </div>
+        <?php 
+            endforeach;
+        else:
+            echo '<p>Chưa có dữ liệu dịch vụ chuyên khoa.</p>';
+        endif; 
+        ?>
+    </div>
+    <?php
+    return ob_get_clean();
+}
+add_shortcode('clinic_services', 'clinic_services_grid_shortcode');
 function clinic_auth_scripts() {
     if ( is_page('dang-nhap') || is_page('dang-ky') ) {
         ?>
@@ -1838,7 +2134,21 @@ function clinic_login_form_shortcode() {
         $user = wp_signon( $creds, false );
 
         if ( is_wp_error( $user ) ) {
-            $output .= '<p style="color:red; text-align:center;">' . $user->get_error_message() . '</p>';
+            $error_text = $user->get_error_message();
+            // Làm sạch thông báo lỗi để gọn hơn
+            if (strpos($error_text, 'Mật khẩu') !== false) {
+                $error_text = 'Mật khẩu không chính xác. Vui lòng thử lại.';
+            } elseif (strpos($error_text, 'tên người dùng') !== false) {
+                $error_text = 'Tên đăng nhập hoặc Email không tồn tại.';
+            }
+            $output .= '<div class="clinic-auth-error">' . $error_text . '</div>';
+
+            // Ngăn chặn hộp thoại "Resubmit form" khi reload trang
+            echo '<script>
+                if ( window.history.replaceState ) {
+                    window.history.replaceState( null, null, window.location.href );
+                }
+            </script>';
         } else {
             echo '<script>window.location.href="' . home_url() . '";</script>';
             exit;
@@ -1867,7 +2177,10 @@ function clinic_login_form_shortcode() {
                 </div>
                 <button type="submit" name="clinic_login_submit" class="clinic-auth-btn">Đăng nhập</button>
                 <div class="clinic-auth-footer">
-                    Chưa có tài khoản? <a href="<?php echo home_url('/dang-ky/'); ?>">Đăng ký ngay</a>
+                    <a href="' . wp_lostpassword_url() . '" style="color: #718096; font-weight: 500; font-size: 14px;">Quên mật khẩu?</a>
+                    <div style="margin-top: 15px;">
+                        Chưa có tài khoản? <a href="' . home_url('/dang-ky/') . '">Đăng ký ngay</a>
+                    </div>
                 </div>
             </form>
         </div>
@@ -1877,7 +2190,7 @@ function clinic_login_form_shortcode() {
         #clinic-login-form input[type="checkbox"] { width: auto !important; height: auto !important; padding: 0 !important; margin: 0 10px 0 0 !important; }
     </style>
     <?php
-    return $output . ob_get_clean();
+    return ob_get_clean();
 }
 add_shortcode( 'clinic_login_form', 'clinic_login_form_shortcode' );
 
@@ -2013,7 +2326,7 @@ function clinic_booking_history_shortcode() {
                         <tr>
                             <th>Ngày & Giờ</th>
                             <th>Bác sĩ / Chuyên khoa</th>
-                            <th>Người khám</th>
+                            <th>Bệnh nhân</th>
                             <th>Trạng thái</th>
                         </tr>
                     </thead>
@@ -2197,6 +2510,17 @@ function clinic_user_settings_shortcode() {
                 <p><?php echo esc_html($current_user->user_email); ?></p>
             </div>
             <div class="profile-actions">
+                <?php 
+                // Kiểm tra nếu là bác sĩ thì hiện nút vào Dashboard
+                $is_doctor_linked = get_posts(array(
+                    'post_type' => 'doctor', 
+                    'meta_key' => '_doctor_user_id', 
+                    'meta_value' => $user_id,
+                    'posts_per_page' => 1
+                ));
+                if ($is_doctor_linked) : ?>
+                    <a href="<?php echo home_url('/dashboard-bac-si/'); ?>" class="btn-profile-sub primary" style="text-decoration:none; text-align:center; display:block; margin-bottom:10px; background:#005086; color:#fff;">VÀO TRANG QUẢN LÝ LỊCH</a>
+                <?php endif; ?>
                 <button type="button" class="btn-profile-sub">Đổi ảnh đại diện</button>
                 <button type="button" class="btn-profile-sub" onclick="clinic_toggle_password()">Đổi mật khẩu</button>
             </div>
@@ -2291,4 +2615,244 @@ function clinic_user_settings_shortcode() {
     return ob_get_clean();
 }
 add_shortcode( 'clinic_user_settings', 'clinic_user_settings_shortcode' );
+
+// ==========================================
+// DASHBOARD DÀNH RIÊNG CHO BÁC SĨ
+// ==========================================
+function doctor_dashboard_shortcode() {
+    // 1. Kiểm tra đăng nhập
+    if (!is_user_logged_in()) {
+        $login_page = home_url('/dang-nhap/');
+        $redirect = get_permalink();
+        echo '<script>window.location.href="' . $login_page . '?redirect_to=' . urlencode($redirect) . '";</script>';
+        return '<div style="text-align:center; padding:50px;">Đang chuyển hướng đến trang đăng nhập...</div>';
+    }
+
+    $current_user_id = get_current_user_id();
+
+    // 2. Tìm bài viết Bác sĩ liên kết với tài khoản này
+    $doctor_posts = get_posts(array(
+        'post_type' => 'doctor',
+        'meta_query' => array(
+            array(
+                'key' => '_doctor_user_id',
+                'value' => $current_user_id,
+            )
+        ),
+        'posts_per_page' => 1
+    ));
+
+    // Nếu không phải là bác sĩ (hoặc chưa được liên kết)
+    if (empty($doctor_posts)) {
+        return '<div style="max-width: 800px; margin: 50px auto; padding: 40px; background: #ebf8ff; border-radius: 20px; border: 2px dashed #63b3ed; text-align: center; font-family: \'Inter\', sans-serif;">
+            <i class="fas fa-user-md" style="font-size: 40px; color: #2b6cb0; margin-bottom: 20px;"></i>
+            <h3 style="color: #2b6cb0; margin-top: 0;">Dành cho Bác sĩ</h3>
+            <p style="color: #718096;">Tài khoản của bạn chưa được liên kết với hồ sơ Bác sĩ nào trong hệ thống. Vui lòng liên hệ Admin để được hỗ trợ.</p>
+        </div>';
+    }
+
+    $doctor_id = $doctor_posts[0]->ID;
+    $doctor_name = $doctor_posts[0]->post_title;
+
+    // 3. TỰ ĐỘNG CẬP NHẬT ID CHO LỊCH CŨ (Nếu chưa có ID nhưng khớp tên)
+    // Việc này giúp các lịch bạn đã đặt trước đó vẫn hiện ra
+    $all_my_appointments = get_posts(array(
+        'post_type' => 'appointment',
+        'posts_per_page' => -1,
+        'post_status' => array('pending', 'publish', 'private', 'draft'),
+        'meta_query' => array(
+            'relation' => 'OR',
+            // Trường hợp 1: Đã có ID chính xác
+            array(
+                'key' => '_doctor_id',
+                'value' => (string)$doctor_id,
+            ),
+            // Trường hợp 2: Chưa có ID nhưng tên bác sĩ khớp (dành cho lịch cũ)
+            array(
+                'key' => '_selected_doctor',
+                'value' => $doctor_name,
+            )
+        )
+    ));
+
+    // Cập nhật ID cho những lịch cũ chưa có ID
+    foreach ($all_my_appointments as $app) {
+        $existing_id = get_post_meta($app->ID, '_doctor_id', true);
+        if (empty($existing_id)) {
+            update_post_meta($app->ID, '_doctor_id', (string)$doctor_id);
+        }
+    }
+
+    // 4. Lấy danh sách lịch hẹn chính thức (sắp xếp theo ngày)
+    $appointments = get_posts(array(
+        'post_type' => 'appointment',
+        'posts_per_page' => -1,
+        'meta_query' => array(
+            array(
+                'key' => '_doctor_id',
+                'value' => (string)$doctor_id,
+            )
+        ),
+        'post_status' => array('pending', 'publish', 'private', 'draft'),
+        'orderby' => 'meta_value',
+        'meta_key' => '_booking_date',
+        'order' => 'DESC'
+    ));
+
+    ob_start();
+    ?>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        .doctor-dashboard { font-family: 'Inter', sans-serif; max-width: 1200px; margin: 40px auto; color: #2d3748; }
+        .dd-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; background: linear-gradient(135deg, #005086 0%, #2b6cb0 100%); padding: 40px; border-radius: 24px; color: #fff; box-shadow: 0 15px 35px rgba(43,108,176,0.25); }
+        .dd-header h2 { margin: 0; font-size: 32px; font-weight: 800; }
+        .dd-header p { margin: 8px 0 0; opacity: 0.9; font-size: 16px; }
+        
+        .dd-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 25px; margin-bottom: 40px; }
+        .dd-stat-card { background: #fff; padding: 25px; border-radius: 20px; box-shadow: 0 10px 20px rgba(0,0,0,0.03); border: 1px solid #edf2f7; display: flex; align-items: center; gap: 20px; }
+        .dd-stat-icon { width: 60px; height: 60px; border-radius: 16px; display: flex; align-items: center; justify-content: center; font-size: 24px; }
+        .icon-blue { background: #ebf8ff; color: #2b6cb0; }
+        .icon-green { background: #f0fff4; color: #38a169; }
+        
+        .dd-stat-info h3 { margin: 0; font-size: 14px; text-transform: uppercase; color: #718096; letter-spacing: 1px; }
+        .dd-stat-info .value { font-size: 28px; font-weight: 800; color: #1a365d; }
+
+        .dd-table-container { background: #fff; border-radius: 24px; overflow: hidden; box-shadow: 0 15px 45px rgba(0,0,0,0.05); border: 1px solid #edf2f7; }
+        .dd-table { width: 100%; border-collapse: collapse; text-align: left; }
+        .dd-table th { background: #f8fafc; padding: 22px 20px; font-size: 13px; font-weight: 700; text-transform: uppercase; color: #4a5568; border-bottom: 2px solid #edf2f7; letter-spacing: 0.5px; }
+        .dd-table td { padding: 22px 20px; border-bottom: 1px solid #f0f4f8; font-size: 15px; }
+        .dd-table tr:last-child td { border-bottom: none; }
+        .dd-table tr:hover { background: #f7fafc; }
+        
+        .status-badge { display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: 50px; font-size: 12px; font-weight: 700; text-transform: uppercase; }
+        .status-pending { background: #fffaf0; color: #975a16; border: 1px solid #fbd38d; }
+        .status-confirmed { background: #f0fff4; color: #276749; border: 1px solid #9ae6b4; }
+        
+        .patient-info { display: flex; align-items: center; gap: 15px; }
+        .patient-avatar { width: 45px; height: 45px; border-radius: 14px; background: linear-gradient(135deg, #ebf8ff 0%, #bee3f8 100%); color: #2b6cb0; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 16px; box-shadow: 0 4px 10px rgba(43,108,176,0.1); }
+        
+        .btn-call { display: inline-flex; align-items: center; gap: 5px; color: #2b6cb0; text-decoration: none; font-weight: 700; transition: 0.2s; }
+        .btn-call:hover { color: #2c5282; transform: translateX(3px); }
+
+        @media (max-width: 900px) {
+            .dd-header { flex-direction: column; text-align: center; gap: 20px; }
+            .dd-table thead { display: none; }
+            .dd-table td { display: block; padding: 12px 25px; border: none; text-align: right; position: relative; }
+            .dd-table td::before { content: attr(data-label); position: absolute; left: 25px; font-weight: 800; font-size: 11px; text-transform: uppercase; color: #a0aec0; }
+            .dd-table tr { display: block; border-bottom: 8px solid #f7fafc; padding: 15px 0; }
+            .patient-info { justify-content: flex-end; }
+        }
+    </style>
+
+    <div class="doctor-dashboard">
+        <div class="dd-header">
+            <div>
+                <h2>Bác sĩ: <?php echo esc_html($doctor_name); ?></h2>
+                <p><i class="fas fa-check-circle"></i> Tài khoản của bạn đã được xác thực và sẵn sàng nhận lịch.</p>
+            </div>
+            <div style="text-align: right;">
+                <div style="font-size: 14px; opacity: 0.8; font-weight: 600;">NGÀY HÔM NAY</div>
+                <div style="font-size: 24px; font-weight: 800;"><?php echo date('d/m/Y'); ?></div>
+            </div>
+        </div>
+
+        <div class="dd-stats">
+            <div class="dd-stat-card">
+                <div class="dd-stat-icon icon-blue">
+                    <i class="fas fa-calendar-check"></i>
+                </div>
+                <div class="dd-stat-info">
+                    <h3>Tổng số ca khám</h3>
+                    <div class="value"><?php echo count($appointments); ?></div>
+                </div>
+            </div>
+            <div class="dd-stat-card">
+                <div class="dd-stat-icon icon-green">
+                    <i class="fas fa-user-clock"></i>
+                </div>
+                <div class="dd-stat-info">
+                    <h3>Lịch khám mới nhất</h3>
+                    <div class="value">
+                        <?php 
+                            $latest_count = 0;
+                            foreach($appointments as $app) {
+                                if ($app->post_status === 'pending') $latest_count++;
+                            }
+                            echo $latest_count;
+                        ?>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="dd-table-container">
+            <?php if (empty($appointments)) : ?>
+                <div style="padding: 80px 20px; text-align: center; color: #a0aec0;">
+                    <img src="https://cdn-icons-png.flaticon.com/512/1157/1157053.png" style="width: 100px; opacity: 0.2; margin-bottom: 25px;">
+                    <p style="font-size: 18px; font-weight: 600;">Chưa có dữ liệu lịch hẹn nào dành cho bạn.</p>
+                </div>
+            <?php else : ?>
+                <table class="dd-table">
+                    <thead>
+                        <tr>
+                            <th>Thông tin bệnh nhân</th>
+                            <th>Thời gian hẹn</th>
+                            <th>Liên hệ</th>
+                            <th>Vấn đề sức khỏe</th>
+                            <th>Trạng thái</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($appointments as $app) : 
+                            $patient_name = get_post_meta($app->ID, '_patient_name', true);
+                            $patient_phone = get_post_meta($app->ID, '_patient_phone', true);
+                            $booking_date = get_post_meta($app->ID, '_booking_date', true);
+                            $booking_time = get_post_meta($app->ID, '_booking_time', true);
+                            $symptoms = get_post_field('post_content', $app->ID);
+                            $status = $app->post_status;
+                            
+                            $initials = mb_substr($patient_name, 0, 1);
+                        ?>
+                        <tr>
+                            <td data-label="Bệnh nhân">
+                                <div class="patient-info">
+                                    <div class="patient-avatar"><?php echo esc_html($initials); ?></div>
+                                    <div>
+                                        <strong style="color: #1a365d;"><?php echo esc_html($patient_name); ?></strong><br>
+                                        <span style="font-size: 12px; color: #718096;"><?php echo get_post_meta($app->ID, '_patient_gender', true); ?> • <?php echo get_post_meta($app->ID, '_patient_dob', true); ?></span>
+                                    </div>
+                                </div>
+                            </td>
+                            <td data-label="Thời gian">
+                                <div style="font-weight: 700; color: #2d3748;"><?php echo esc_html($booking_date); ?></div>
+                                <div style="color: #2b6cb0; font-size: 13px; font-weight: 700;"><i class="far fa-clock"></i> <?php echo esc_html($booking_time); ?></div>
+                            </td>
+                            <td data-label="Liên hệ">
+                                <a href="tel:<?php echo esc_attr($patient_phone); ?>" class="btn-call">
+                                    <i class="fas fa-phone-alt"></i> <?php echo esc_html($patient_phone); ?>
+                                </a>
+                            </td>
+                            <td data-label="Triệu chứng">
+                                <div style="max-width: 250px; font-style: italic; color: #4a5568; line-height: 1.4;" title="<?php echo esc_attr($symptoms); ?>">
+                                    "<?php echo esc_html(wp_trim_words(str_replace('Triệu chứng: ', '', $symptoms), 15)); ?>"
+                                </div>
+                            </td>
+                            <td data-label="Trạng thái">
+                                <?php if ($status === 'pending') : ?>
+                                    <span class="status-badge status-pending"><i class="fas fa-hourglass-half"></i> Chờ khám</span>
+                                <?php else : ?>
+                                    <span class="status-badge status-confirmed"><i class="fas fa-check-double"></i> Đã khám</span>
+                                <?php endif; ?>
+                            </td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            <?php endif; ?>
+        </div>
+    </div>
+    <?php
+    return ob_get_clean();
+}
+add_shortcode('doctor_dashboard', 'doctor_dashboard_shortcode');
 ?>
