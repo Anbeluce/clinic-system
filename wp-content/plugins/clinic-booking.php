@@ -48,11 +48,18 @@ function create_appointment_post_type() {
             'all_items' => 'Tất cả lịch khám',
             'menu_name' => 'Lịch khám'
         ),
-        'public' => true,
-        'has_archive' => false,
-        'supports' => array( 'title', 'custom-fields' ), // Tiêu đề và trường tùy chỉnh
-        'menu_icon' => 'dashicons-calendar-alt', // Icon hiển thị trong admin
-        'show_in_rest' => true, // Hỗ trợ REST API (cần thiết nếu sau này dùng React/Vue hoặc AJAX)
+        'public'              => false, // Không hiển thị ngoài frontend
+        'show_ui'             => true,  // Vẫn hiển thị UI quản trị trong Admin
+        'show_in_menu'        => true,  // Vẫn hiển thị trên menu quản trị
+        'publicly_queryable'  => false, // Khách không thể gõ URL để vào xem lịch khám
+        'exclude_from_search' => true,  // Loại bỏ hoàn toàn khỏi bộ tìm kiếm công cộng
+        'show_in_nav_menus'   => false, // Không cho phép thêm lịch khám vào menu
+        'has_archive'         => false,
+        'rewrite'             => false, // Tắt hoàn toàn việc sinh URL tĩnh
+        'query_var'           => false,
+        'supports'            => array( 'title', 'custom-fields' ), // Tiêu đề và trường tùy chỉnh
+        'menu_icon'           => 'dashicons-calendar-alt', // Icon hiển thị trong admin
+        'show_in_rest'        => true, // Hỗ trợ REST API cho AJAX/Dashboard thống kê
     );
     
     register_post_type( 'appointment', $args );
