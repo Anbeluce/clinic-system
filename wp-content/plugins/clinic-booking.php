@@ -1969,39 +1969,196 @@ function clinic_services_grid_shortcode() {
             justify-content: space-between;
             padding-top: 20px;
             border-top: 1px solid #f7fafc;
+            gap: 10px;
         }
         .cb-service-price {
-            font-weight: 700;
-            color: #2d3748;
-            font-size: 16px;
+            font-weight: 800;
+            color: #e53e3e; /* Đỏ chuyên nghiệp */
+            font-size: 20px;
+            flex-shrink: 0;
         }
         .cb-service-price span {
-            font-size: 12px;
+            font-size: 11px;
             color: #a0aec0;
-            font-weight: 500;
+            font-weight: 600;
             display: block;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 2px;
         }
-        .cb-btn-book-service {
-            background: #f7fafc;
-            color: #2b6cb0;
-            padding: 10px 20px;
-            border-radius: 10px;
+        .cb-service-actions {
+            display: flex;
+            gap: 8px;
+        }
+        .cb-btn-book-service, .cb-btn-view-service {
+            padding: 10px 15px;
+            border-radius: 8px;
             text-decoration: none;
             font-weight: 700;
-            font-size: 14px;
+            font-size: 13px;
             transition: 0.3s;
+            display: inline-block;
+            text-align: center;
+            border: none;
+            cursor: pointer;
         }
-        .cb-service-card:hover .cb-btn-book-service {
+        .cb-btn-book-service {
             background: #2b6cb0;
             color: #fff;
         }
+        .cb-btn-book-service:hover {
+            background: #2c5282;
+            box-shadow: 0 4px 12px rgba(43,108,176,0.3);
+        }
+        .cb-btn-view-service {
+            background: #f7fafc;
+            color: #4a5568;
+            border: 1px solid #e2e8f0;
+        }
+        .cb-btn-view-service:hover {
+            background: #edf2f7;
+            color: #2b6cb0;
+        }
+
+        /* Toolbar Lọc & Tìm kiếm */
+        .cb-services-toolbar {
+            margin-bottom: 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+        .cb-services-filter {
+            display: flex;
+            gap: 10px;
+            overflow-x: auto;
+            padding-bottom: 5px;
+        }
+        .filter-btn {
+            padding: 10px 20px;
+            border-radius: 50px;
+            background: #fff;
+            border: 1px solid #e2e8f0;
+            color: #4a5568;
+            font-weight: 600;
+            font-size: 14px;
+            cursor: pointer;
+            transition: 0.3s;
+            white-space: nowrap;
+        }
+        .filter-btn.active, .filter-btn:hover {
+            background: #2b6cb0;
+            color: #fff;
+            border-color: #2b6cb0;
+        }
+        .cb-services-search {
+            position: relative;
+            min-width: 300px;
+        }
+        .cb-services-search input {
+            width: 100%;
+            padding: 12px 20px 12px 45px;
+            border-radius: 50px;
+            border: 2px solid #e2e8f0;
+            font-size: 15px;
+            transition: 0.3s;
+            outline: none;
+        }
+        .cb-services-search input:focus {
+            border-color: #2b6cb0;
+            box-shadow: 0 0 0 4px rgba(43,108,176,0.1);
+        }
+        .cb-services-search i {
+            position: absolute;
+            left: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #a0aec0;
+        }
+
+        /* Modal Chi tiết */
+        .cb-modal {
+            display: none;
+            position: fixed;
+            z-index: 9999;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.6);
+            backdrop-filter: blur(5px);
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .cb-modal-content {
+            background-color: #fefefe;
+            border-radius: 24px;
+            max-width: 800px;
+            width: 100%;
+            max-height: 90vh;
+            overflow-y: auto;
+            position: relative;
+            box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25);
+            padding: 40px;
+            font-family: 'Inter', sans-serif;
+        }
+        .cb-modal-close {
+            position: absolute;
+            right: 25px;
+            top: 25px;
+            font-size: 28px;
+            font-weight: bold;
+            color: #a0aec0;
+            cursor: pointer;
+            transition: 0.3s;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            background: #f7fafc;
+        }
+        .cb-modal-close:hover { color: #e53e3e; background: #fff5f5; }
+        .cb-modal-header { display: flex; gap: 30px; margin-bottom: 30px; align-items: start; }
+        .cb-modal-icon { width: 80px; height: 80px; background: #ebf8ff; border-radius: 20px; display: flex; align-items: center; justify-content: center; font-size: 36px; color: #2b6cb0; flex-shrink: 0; }
+        .cb-modal-title h2 { margin: 0; color: #1a365d; font-size: 32px; font-weight: 800; }
+        .cb-modal-title .price-tag { color: #e53e3e; font-size: 20px; font-weight: 700; margin-top: 5px; display: block; }
+        .cb-modal-body h4 { color: #2b6cb0; font-size: 18px; margin: 25px 0 10px; font-weight: 700; display: flex; align-items: center; gap: 10px; }
+        .cb-modal-body h4 i { font-size: 16px; }
+        .cb-modal-body p { color: #4a5568; line-height: 1.8; margin-bottom: 0; }
+        .cb-modal-footer { margin-top: 40px; display: flex; justify-content: flex-end; }
+        
+        @media (max-width: 600px) {
+            .cb-modal-header { flex-direction: column; gap: 15px; }
+            .cb-modal-content { padding: 25px; }
+            .cb-services-toolbar { flex-direction: column; align-items: stretch; }
+            .cb-services-search { min-width: 100%; }
+        }
     </style>
     
-    <div class="cb-services-grid">
+    <!-- Toolbar Lọc & Tìm kiếm -->
+    <div class="cb-services-toolbar">
+        <div class="cb-services-filter">
+            <button class="filter-btn active" data-filter="all">Tất cả dịch vụ</button>
+            <button class="filter-btn" data-filter="exam">Khám lâm sàng</button>
+            <button class="filter-btn" data-filter="imaging">Chẩn đoán hình ảnh</button>
+            <button class="filter-btn" data-filter="test">Xét nghiệm</button>
+            <button class="filter-btn" data-filter="package">Gói sức khỏe</button>
+        </div>
+        <div class="cb-services-search">
+            <i class="fas fa-search"></i>
+            <input type="text" id="service-search" placeholder="Tìm tên dịch vụ, gói khám...">
+        </div>
+    </div>
+
+    <div class="cb-services-grid" id="services-grid">
         <?php 
         if (!empty($specialties) && !is_wp_error($specialties)) :
             foreach ($specialties as $spec) :
-                $icon_class = 'fa-user-md'; // Default
+                $icon_class = 'fa-user-md'; 
                 foreach($icon_map as $key => $icon) {
                     if (stripos($spec->name, $key) !== false) {
                         $icon_class = $icon;
@@ -2009,38 +2166,171 @@ function clinic_services_grid_shortcode() {
                     }
                 }
                 
-                // Giả lập giá và mô tả (có thể lấy từ term meta nếu bạn đã cài)
+                // --- PHẦN 1: COPYWRITING - TỰ ĐỘNG ĐỔI TÊN ---
+                $display_name = $spec->name;
+                if (stripos($display_name, 'Bác sĩ chuyên khoa') !== false) {
+                    $display_name = str_ireplace('Bác sĩ chuyên khoa', 'Khám chuyên khoa', $display_name);
+                } elseif (stripos($display_name, 'Bác sĩ') !== false) {
+                    $display_name = str_ireplace('Bác sĩ', 'Khám', $display_name);
+                }
+                
+                // Phân loại danh mục để lọc (giả lập dựa trên tên)
+                $category = 'exam';
+                if (stripos($display_name, 'Gói') !== false) $category = 'package';
+                elseif (stripos($display_name, 'Siêu âm') !== false || stripos($display_name, 'X-Quang') !== false) $category = 'imaging';
+                elseif (stripos($display_name, 'Xét nghiệm') !== false || stripos($display_name, 'Máu') !== false) $category = 'test';
+
                 $price = '200.000đ';
-                if (stripos($spec->name, 'Ngoại') !== false) $price = '250.000đ';
+                $price_label = 'Phí dịch vụ từ:';
+                if (stripos($spec->name, 'Gói') !== false) {
+                    $price = '1.500.000đ';
+                    $price_label = 'Giá trọn gói:';
+                } elseif (stripos($spec->name, 'Ngoại') !== false) {
+                    $price = '250.000đ';
+                }
                 
                 $desc = $spec->description;
                 if (empty($desc)) {
-                    $desc = 'Dịch vụ khám và điều trị chuyên sâu chuyên khoa ' . $spec->name . ' với đội ngũ bác sĩ hàng đầu.';
+                    $desc = 'Dịch vụ ' . $display_name . ' chất lượng cao với đội ngũ bác sĩ giàu kinh nghiệm và trang thiết bị hiện đại.';
                 }
+
+                // Thông tin chi tiết giả lập cho Modal
+                $steps = "• Đăng ký thông tin\n• Khám lâm sàng với bác sĩ\n• Thực hiện cận lâm sàng (nếu có)\n• Tư vấn kết quả và đơn thuốc";
+                $prep = "Vui lòng mang theo hồ sơ bệnh án cũ (nếu có).";
+                if ($category == 'test' || $category == 'package') $prep = "Nên nhịn ăn ít nhất 8 tiếng trước khi thực hiện để kết quả chính xác nhất.";
         ?>
-            <div class="cb-service-card">
+            <div class="cb-service-card" data-category="<?php echo $category; ?>" data-name="<?php echo esc_attr(mb_strtolower($display_name)); ?>">
                 <div class="cb-service-icon">
                     <i class="fa-solid <?php echo $icon_class; ?>"></i>
                 </div>
-                <h3><?php echo esc_html($spec->name); ?></h3>
+                <h3><?php echo esc_html($display_name); ?></h3>
                 <div class="cb-service-desc">
-                    <?php echo wp_trim_words($desc, 25); ?>
+                    <?php echo wp_trim_words($desc, 22); ?>
                 </div>
                 <div class="cb-service-footer">
                     <div class="cb-service-price">
-                        <span>Phí khám từ:</span>
+                        <span><?php echo $price_label; ?></span>
                         <?php echo $price; ?>
                     </div>
-                    <a href="<?php echo home_url('/dat-lich/'); ?>?auto_specialty=<?php echo $spec->term_id; ?>" class="cb-btn-book-service">Đặt lịch ngay</a>
+                    <div class="cb-service-actions">
+                        <button class="cb-btn-view-service" 
+                                data-title="<?php echo esc_attr($display_name); ?>"
+                                data-desc="<?php echo esc_attr($desc); ?>"
+                                data-price="<?php echo esc_attr($price); ?>"
+                                data-steps="<?php echo esc_attr($steps); ?>"
+                                data-prep="<?php echo esc_attr($prep); ?>"
+                                data-icon="<?php echo $icon_class; ?>">Chi tiết</button>
+                        <a href="<?php echo home_url('/dat-lich/'); ?>?auto_specialty=<?php echo $spec->term_id; ?>" class="cb-btn-book-service">Đặt lịch</a>
+                    </div>
                 </div>
             </div>
         <?php 
             endforeach;
         else:
-            echo '<p>Chưa có dữ liệu dịch vụ chuyên khoa.</p>';
+            echo '<p>Chưa có dữ liệu dịch vụ.</p>';
         endif; 
         ?>
     </div>
+
+    <!-- Modal Xem Chi Tiết -->
+    <div id="serviceModal" class="cb-modal">
+        <div class="cb-modal-content">
+            <span class="cb-modal-close">&times;</span>
+            <div class="cb-modal-header">
+                <div class="cb-modal-icon" id="modalIcon">
+                    <i class="fa-solid fa-user-md"></i>
+                </div>
+                <div class="cb-modal-title">
+                    <h2 id="modalTitle">Tên Dịch Vụ</h2>
+                    <span class="price-tag" id="modalPrice">200.000đ</span>
+                </div>
+            </div>
+            <div class="cb-modal-body">
+                <p id="modalDesc">Mô tả dịch vụ sẽ hiển thị ở đây.</p>
+                
+                <h4><i class="fas fa-list-check"></i> Quy trình thực hiện</h4>
+                <p id="modalSteps" style="white-space: pre-line;">Các bước thực hiện...</p>
+                
+                <h4><i class="fas fa-info-circle"></i> Chuẩn bị trước khi khám</h4>
+                <p id="modalPrep">Thông tin cần chuẩn bị...</p>
+                
+                <h4><i class="fas fa-microscope"></i> Trang thiết bị</h4>
+                <p>Hệ thống máy móc hiện đại, nhập khẩu từ Mỹ và Nhật Bản, đảm bảo độ chính xác cao nhất.</p>
+            </div>
+            <div class="cb-modal-footer">
+                <a href="<?php echo home_url('/dat-lich/'); ?>" class="cb-btn-book-service" style="padding: 15px 40px; font-size: 16px;">Đặt lịch ngay</a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // 1. Logic Lọc & Tìm kiếm
+        const searchInput = document.getElementById('service-search');
+        const filterBtns = document.querySelectorAll('.filter-btn');
+        const cards = document.querySelectorAll('.cb-service-card');
+
+        function filterServices() {
+            const searchTerm = searchInput.value.toLowerCase().trim();
+            const activeFilter = document.querySelector('.filter-btn.active').dataset.filter;
+
+            cards.forEach(card => {
+                const name = card.dataset.name;
+                const category = card.dataset.category;
+                
+                const matchesSearch = name.includes(searchTerm);
+                const matchesFilter = activeFilter === 'all' || category === activeFilter;
+
+                if (matchesSearch && matchesFilter) {
+                    card.style.display = 'flex';
+                } else {
+                    card.style.display = 'none';
+                }
+            });
+        }
+
+        searchInput.addEventListener('input', filterServices);
+
+        filterBtns.forEach(btn => {
+            btn.addEventListener('click', function() {
+                filterBtns.forEach(b => b.classList.remove('active'));
+                this.classList.add('active');
+                filterServices();
+            });
+        });
+
+        // 2. Logic Modal Chi tiết
+        const modal = document.getElementById('serviceModal');
+        const closeBtn = document.querySelector('.cb-modal-close');
+        const viewBtns = document.querySelectorAll('.cb-btn-view-service');
+
+        viewBtns.forEach(btn => {
+            btn.addEventListener('click', function() {
+                document.getElementById('modalTitle').innerText = this.dataset.title;
+                document.getElementById('modalDesc').innerText = this.dataset.desc;
+                document.getElementById('modalPrice').innerText = this.dataset.price;
+                document.getElementById('modalSteps').innerText = this.dataset.steps;
+                document.getElementById('modalPrep').innerText = this.dataset.prep;
+                document.getElementById('modalIcon').innerHTML = `<i class="fa-solid ${this.dataset.icon}"></i>`;
+                
+                modal.style.display = 'flex';
+                document.body.style.overflow = 'hidden'; // Khóa cuộn trang
+            });
+        });
+
+        closeBtn.onclick = function() {
+            modal.style.display = 'none';
+            document.body.style.overflow = 'auto';
+        }
+
+        window.onclick = function(event) {
+            if (event.target == modal) {
+                modal.style.display = 'none';
+                document.body.style.overflow = 'auto';
+            }
+        }
+    });
+    </script>
     <?php
     return ob_get_clean();
 }
@@ -2143,15 +2433,15 @@ function clinic_login_form_shortcode() {
             }
             $output .= '<div class="clinic-auth-error">' . $error_text . '</div>';
 
-            // Ngăn chặn hộp thoại "Resubmit form" khi reload trang
-            echo '<script>
+            // Đưa script vào $output thay vì echo trực tiếp
+            $output .= '<script>
                 if ( window.history.replaceState ) {
                     window.history.replaceState( null, null, window.location.href );
                 }
             </script>';
         } else {
-            echo '<script>window.location.href="' . home_url() . '";</script>';
-            exit;
+            // Đưa script chuyển hướng vào chuỗi return để chạy an toàn
+            return '<script>window.location.href="' . home_url() . '";</script>';
         }
     }
 
@@ -2177,9 +2467,9 @@ function clinic_login_form_shortcode() {
                 </div>
                 <button type="submit" name="clinic_login_submit" class="clinic-auth-btn">Đăng nhập</button>
                 <div class="clinic-auth-footer">
-                    <a href="' . wp_lostpassword_url() . '" style="color: #718096; font-weight: 500; font-size: 14px;">Quên mật khẩu?</a>
+                    <a href="<?php echo wp_lostpassword_url(); ?>" style="color: #718096; font-weight: 500; font-size: 14px;">Quên mật khẩu?</a>
                     <div style="margin-top: 15px;">
-                        Chưa có tài khoản? <a href="' . home_url('/dang-ky/') . '">Đăng ký ngay</a>
+                        Chưa có tài khoản? <a href="<?php echo home_url('/dang-ky/'); ?>">Đăng ký ngay</a>
                     </div>
                 </div>
             </form>
@@ -2193,7 +2483,6 @@ function clinic_login_form_shortcode() {
     return ob_get_clean();
 }
 add_shortcode( 'clinic_login_form', 'clinic_login_form_shortcode' );
-
 /**
  * Shortcode for Custom Registration Form
  */
@@ -2656,24 +2945,26 @@ function doctor_dashboard_shortcode() {
 
     // 3. TỰ ĐỘNG CẬP NHẬT ID CHO LỊCH CŨ (Nếu chưa có ID nhưng khớp tên)
     // Việc này giúp các lịch bạn đã đặt trước đó vẫn hiện ra
-    $all_my_appointments = get_posts(array(
-        'post_type' => 'appointment',
-        'posts_per_page' => -1,
-        'post_status' => array('pending', 'publish', 'private', 'draft'),
-        'meta_query' => array(
-            'relation' => 'OR',
-            // Trường hợp 1: Đã có ID chính xác
-            array(
-                'key' => '_doctor_id',
-                'value' => (string)$doctor_id,
-            ),
-            // Trường hợp 2: Chưa có ID nhưng tên bác sĩ khớp (dành cho lịch cũ)
-            array(
-                'key' => '_selected_doctor',
-                'value' => $doctor_name,
-            )
-        )
-    ));
+    global $wpdb;
+    $all_my_appointments_raw = $wpdb->get_results($wpdb->prepare("
+        SELECT DISTINCT p.* 
+        FROM {$wpdb->posts} p
+        INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id
+        WHERE p.post_type = 'appointment'
+          AND p.post_status IN ('pending', 'publish', 'private', 'draft')
+          AND (
+            (pm.meta_key = '_doctor_id' AND pm.meta_value = %s)
+            OR 
+            (pm.meta_key = '_selected_doctor' AND pm.meta_value = %s)
+          )
+    ", (string)$doctor_id, $doctor_name));
+
+    $all_my_appointments = array();
+    if (!empty($all_my_appointments_raw)) {
+        foreach ($all_my_appointments_raw as $post_raw) {
+            $all_my_appointments[] = new WP_Post($post_raw);
+        }
+    }
 
     // Cập nhật ID cho những lịch cũ chưa có ID
     foreach ($all_my_appointments as $app) {
@@ -2684,20 +2975,24 @@ function doctor_dashboard_shortcode() {
     }
 
     // 4. Lấy danh sách lịch hẹn chính thức (sắp xếp theo ngày)
-    $appointments = get_posts(array(
-        'post_type' => 'appointment',
-        'posts_per_page' => -1,
-        'meta_query' => array(
-            array(
-                'key' => '_doctor_id',
-                'value' => (string)$doctor_id,
-            )
-        ),
-        'post_status' => array('pending', 'publish', 'private', 'draft'),
-        'orderby' => 'meta_value',
-        'meta_key' => '_booking_date',
-        'order' => 'DESC'
-    ));
+    $appointments_raw = $wpdb->get_results($wpdb->prepare("
+        SELECT DISTINCT p.* 
+        FROM {$wpdb->posts} p
+        INNER JOIN {$wpdb->postmeta} pm1 ON p.ID = pm1.post_id
+        LEFT JOIN {$wpdb->postmeta} pm2 ON (p.ID = pm2.post_id AND pm2.meta_key = '_booking_date')
+        WHERE p.post_type = 'appointment'
+          AND p.post_status IN ('pending', 'publish', 'private', 'draft')
+          AND pm1.meta_key = '_doctor_id'
+          AND pm1.meta_value = %s
+        ORDER BY pm2.meta_value DESC
+    ", (string)$doctor_id));
+
+    $appointments = array();
+    if (!empty($appointments_raw)) {
+        foreach ($appointments_raw as $post_raw) {
+            $appointments[] = new WP_Post($post_raw);
+        }
+    }
 
     ob_start();
     ?>
