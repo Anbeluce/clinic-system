@@ -5493,4 +5493,111 @@ function cb_ajax_submit_doctor_review() {
         'rating'  => $rating
     ));
 }
+
+/**
+ * Shortcode: Hiển thị danh sách Đội ngũ Bác sĩ kèm đánh giá sao uy tín
+ * Shortcode: [clinic_doctors_list]
+ */
+add_shortcode('clinic_doctors_list', 'cb_clinic_doctors_list_shortcode');
+function cb_clinic_doctors_list_shortcode() {
+    $doctors = get_posts(array(
+        'post_type'   => 'doctor',
+        'numberposts' => -1,
+        'post_status' => 'publish',
+        'orderby'     => 'meta_value_num',
+        'meta_key'    => '_average_rating',
+        'order'       => 'DESC' // Sắp xếp bác sĩ có số sao cao nhất lên đầu!
+    ));
+
+    // Fallback nếu chưa có bác sĩ nào được đánh giá (meta _average_rating trống)
+    if (empty($doctors)) {
+        $doctors = get_posts(array(
+            'post_type'   => 'doctor',
+            'numberposts' => -1,
+            'post_status' => 'publish',
+            'orderby'     => 'title',
+            'order'       => 'ASC'
+        ));
+    }
+
+    if (empty($doctors)) {
+        return '<div style="text-align: center; padding: 40px; color: #718096; font-family: \'Inter\', sans-serif;">Chưa có dữ liệu bác sĩ.</div>';
+    }
+
+    $booking_page_url = cb_get_shortcode_page_permalink('clinic_booking_form');
+
+    ob_start();
+    ?>
+    <div class="cb-doctors-grid">
+        <?php foreach ($doctors as $doc) : 
+            $img_url = get_post_meta($doc->ID, '_doctor_image_url', true);
+            if (empty($img_url)) $img_url = get_the_post_thumbnail_url($doc->ID, 'medium');
+            if (empty($img_url)) $img_url = 'https://ui-avatars.com/api/?name='.urlencode($doc->post_title).'&background=ebf8ff&color=2b6cb0&size=200';
+            
+            $specialty = '';
+            $terms = wp_get_post_terms($doc->ID, 'specialty');
+            if (!is_wp_error($terms) && !empty($terms)) {
+                $specialty = $terms[0]->name;
+            } else {
+                $specialty = 'Bác sĩ chuyên khoa';
+            }
+
+            $avg_rating = get_post_meta($doc->ID, '_average_rating', true);
+            $review_count = get_post_meta($doc->ID, '_review_count', true);
+            
+            $excerpt = get_the_excerpt($doc->ID);
+            $summary = $excerpt ? $excerpt : wp_trim_words($doc->post_content, 22);
+        ?>
+            <div class="cb-doctor-card-showcase">
+                <img src="<?php echo esc_url($img_url); ?>" alt="<?php echo esc_attr($doc->post_title); ?>" class="cb-doc-avatar">
+                <h3 class="cb-doc-name"><?php echo esc_html($doc->post_title); ?></h3>
+                <span class="cb-doc-specialty"><?php echo esc_html($specialty); ?></span>
+                
+                <div class="cb-doc-stars">
+                    <?php if (!empty($avg_rating) && floatval($avg_rating) > 0) : 
+                        $stars_full = floor($avg_rating);
+                        $has_half = ($avg_rating - $stars_full) >= 0.5;
+                    ?>
+                        <span style="color: #ecc94b;">
+                            <?php 
+                                echo str_repeat('★', $stars_full);
+                                if ($has_half) echo '½';
+                                echo str_repeat('☆', 5 - $stars_full - ($has_half ? 1 : 0));
+                            ?>
+                        </span>
+                        <span><?php echo esc_html($avg_rating); ?>/5 (<?php echo esc_html($review_count); ?> đánh giá)</span>
+                    <?php else : ?>
+                        <span style="color: #cbd5e0;">☆☆☆☆☆</span>
+                        <span style="color: #a0aec0; font-size: 13px; font-weight: 500;">Chưa có đánh giá</span>
+                    <?php endif; ?>
+                </div>
+                
+                <p class="cb-doc-excerpt">"<?php echo esc_html($summary); ?>"</p>
+                
+                <a href="<?php echo ($booking_page_url !== '#') ? esc_url($booking_page_url . '?auto_doctor=' . $doc->ID) : '#'; ?>" class="cb-doc-btn" <?php if ($booking_page_url === '#') : ?>onclick="alert('Chưa cấu hình trang Đặt lịch. Vui lòng tạo một trang mới trong WordPress Admin và chèn shortcode [clinic_booking_form] vào trang đó.'); return false;"<?php endif; ?>>
+                    <i class="fas fa-calendar-alt"></i> Đặt lịch khám
+                </a>
+            </div>
+        <?php endforeach; ?>
+    </div>
+
+    <style>
+        .cb-doctors-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 35px; max-width: 1200px; margin: 40px auto; font-family: 'Inter', sans-serif; }
+        .cb-doctor-card-showcase { background: #fff; border-radius: 24px; border: 1px solid #edf2f7; box-shadow: 0 10px 30px rgba(0,0,0,0.03); padding: 35px; text-align: center; transition: all 0.3s cubic-bezier(0.165, 0.84, 0.44, 1); display: flex; flex-direction: column; align-items: center; box-sizing: border-box; }
+        .cb-doctor-card-showcase:hover { transform: translateY(-8px); box-shadow: 0 20px 40px rgba(43,108,176,0.08); border-color: #bee3f8; }
+        .cb-doc-avatar { width: 130px; height: 130px; border-radius: 50%; object-fit: cover; margin-bottom: 22px; border: 4px solid #ebf8ff; box-shadow: 0 8px 25px rgba(43,108,176,0.12); }
+        .cb-doc-name { font-size: 22px; font-weight: 800; color: #1a365d; margin: 0 0 8px 0; }
+        .cb-doc-specialty { font-size: 13px; font-weight: 700; color: #2b6cb0; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 15px; background: #ebf8ff; padding: 6px 16px; border-radius: 50px; display: inline-block; }
+        .cb-doc-stars { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 14px; color: #dd6b20; font-weight: 700; margin-bottom: 18px; }
+        .cb-doc-excerpt { font-size: 14px; color: #718096; line-height: 1.6; margin-bottom: 30px; flex-grow: 1; font-style: italic; }
+        .cb-doc-btn { background: linear-gradient(135deg, #005086 0%, #2b6cb0 100%); color: #fff !important; text-decoration: none !important; font-weight: 700; font-size: 15px; padding: 14px 30px; border-radius: 14px; transition: all 0.2s; box-shadow: 0 8px 20px rgba(43,108,176,0.2); width: 85%; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+        .cb-doc-btn:hover { transform: translateY(-2px); box-shadow: 0 12px 25px rgba(43,108,176,0.3); }
+        
+        @media (max-width: 768px) {
+            .cb-doctors-grid { grid-template-columns: 1fr; padding: 0 20px; }
+        }
+    </style>
+    <?php
+    return ob_get_clean();
+}
 ?>
