@@ -3478,6 +3478,8 @@ function doctor_dashboard_shortcode() {
         .dd-nav-btn { background: none; border: none; padding: 12px 24px; font-size: 16px; font-weight: 700; color: #718096; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; border-radius: 12px; transition: all 0.2s; font-family: inherit; }
         .dd-nav-btn:hover { color: #2b6cb0; background: #f7fafc; }
         .dd-nav-btn.active { color: #fff !important; background: linear-gradient(135deg, #005086 0%, #2b6cb0 100%) !important; box-shadow: 0 4px 12px rgba(43,108,176,0.2); }
+        .dd-tab-pane { display: none; }
+        .dd-tab-pane.active { display: block !important; }
     </style>
 
     <div class="doctor-dashboard">
