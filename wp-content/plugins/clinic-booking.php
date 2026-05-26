@@ -5677,15 +5677,11 @@ function cb_clinic_doctors_list_shortcode() {
                                 <h4 class="cb-doc-name"><?php echo esc_html($name); ?></h4>
                             </div>
 
-                            <!-- 4. Chi tiết Chuyên khoa, Giá khám, Chức vụ cụ thể -->
+                            <!-- 4. Chi tiết Chuyên khoa, Chức vụ cụ thể -->
                             <div class="cb-doc-details-list">
                                 <div class="cb-doc-detail-item">
                                     <i class="fa-solid fa-stethoscope"></i>
                                     <span class="cb-detail-txt"><?php echo esc_html($specialty); ?></span>
-                                </div>
-                                <div class="cb-doc-detail-item">
-                                    <i class="fa-solid fa-circle-info"></i>
-                                    <span class="cb-detail-txt"><?php echo esc_html($price); ?></span>
                                 </div>
                                 <div class="cb-doc-detail-item">
                                     <i class="fa-solid fa-hospital"></i>
