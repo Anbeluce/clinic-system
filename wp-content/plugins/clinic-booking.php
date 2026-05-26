@@ -3502,16 +3502,29 @@ function clinic_booking_history_shortcode() {
                                             </button>
                                         <?php else : ?>
                                             <?php if ($status === 'completed') : ?>
-                                                <?php $has_review = get_post_meta($post_id, '_has_review', true); ?>
-                                                <?php if (!$has_review) : ?>
-                                                    <button class="cb-patient-btn cb-patient-review-btn" data-id="<?php echo $post_id; ?>" data-doctor="<?php echo esc_attr($doctor); ?>" style="background: #dd6b20; color: #fff; border: none; padding: 6px 12px; border-radius: 6px; font-weight: 700; font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; transition: all 0.2s;">
-                                                        <i class="fas fa-star"></i> Viết đánh giá
-                                                    </button>
-                                                <?php else : ?>
-                                                    <span style="color: #38a169; font-size: 13px; font-weight: 700; display: inline-flex; align-items: center; gap: 4px;" title="Cảm ơn bạn đã đóng góp đánh giá!">
-                                                        <i class="fas fa-check-circle"></i> Đã đánh giá
-                                                    </span>
-                                                <?php endif; ?>
+                                                <?php 
+                                                $has_review = get_post_meta($post_id, '_has_review', true); 
+                                                $medical_notes = get_post_meta($post_id, '_medical_notes', true);
+                                                $raw_symptoms = get_post_field('post_content', $post_id);
+                                                $clean_symptoms = str_replace('Triệu chứng: ', '', $raw_symptoms);
+                                                ?>
+                                                <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+                                                    <?php if (!empty($medical_notes)) : ?>
+                                                        <button class="cb-patient-btn cb-patient-view-notes-btn" data-id="<?php echo $post_id; ?>" data-doctor="<?php echo esc_attr($doctor); ?>" data-date="<?php echo esc_attr($booking_date); ?>" data-symptoms="<?php echo esc_attr($clean_symptoms); ?>" data-notes="<?php echo esc_attr($medical_notes); ?>" style="background: #3CA5DD; color: #fff; border: none; padding: 6px 12px; border-radius: 6px; font-weight: 700; font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; transition: all 0.2s;">
+                                                            <i class="fas fa-file-medical"></i> Xem kết quả
+                                                        </button>
+                                                    <?php endif; ?>
+                                                    
+                                                    <?php if (!$has_review) : ?>
+                                                        <button class="cb-patient-btn cb-patient-review-btn" data-id="<?php echo $post_id; ?>" data-doctor="<?php echo esc_attr($doctor); ?>" style="background: #dd6b20; color: #fff; border: none; padding: 6px 12px; border-radius: 6px; font-weight: 700; font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; transition: all 0.2s;">
+                                                            <i class="fas fa-star"></i> Viết đánh giá
+                                                        </button>
+                                                    <?php else : ?>
+                                                        <span style="color: #38a169; font-size: 13px; font-weight: 700; display: inline-flex; align-items: center; gap: 4px;" title="Cảm ơn bạn đã đóng góp đánh giá!">
+                                                            <i class="fas fa-check-circle"></i> Đã đánh giá
+                                                        </span>
+                                                    <?php endif; ?>
+                                                </div>
                                             <?php else : ?>
                                                 <span style="color: #a0aec0; font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; gap: 4px;" title="<?php echo esc_attr($modify_error); ?>">
                                                     <i class="fas fa-lock"></i> Khóa
@@ -3585,6 +3598,50 @@ function clinic_booking_history_shortcode() {
                     </div>
                     <div class="cb-modal-footer">
                         <button class="cb-action-btn" id="cb-confirm-submit-review" style="background: #dd6b20; width: 100%;">Gửi đánh giá ngay</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Modal: Xem kết quả khám bệnh -->
+            <div id="cb-modal-view-result" class="cb-modal" style="display: none; position: fixed; z-index: 9999; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.5); align-items: center; justify-content: center; backdrop-filter: blur(4px); transition: all 0.3s ease;">
+                <div class="cb-modal-content" style="background-color: #fff; padding: 30px; border-radius: 20px; box-shadow: 0 15px 50px rgba(0,0,0,0.15); width: 100%; max-width: 550px; position: relative; border: 1px solid #e2e8f0; box-sizing: border-box; font-family: 'Inter', sans-serif;">
+                    <span class="cb-modal-close" data-modal="cb-modal-view-result" style="position: absolute; right: 20px; top: 20px; font-size: 24px; font-weight: bold; color: #a0aec0; cursor: pointer; transition: 0.2s;">&times;</span>
+                    
+                    <div style="text-align: center; margin-bottom: 25px;">
+                        <span style="background: #eef9ff; color: #3CA5DD; font-size: 28px; width: 55px; height: 55px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 10px;">
+                            📋
+                        </span>
+                        <h3 style="color: #1a365d; font-size: 20px; font-weight: 800; margin: 0; text-transform: uppercase; letter-spacing: 0.5px;">Kết quả khám bệnh</h3>
+                        <p style="color: #718096; margin: 5px 0 0 0; font-size: 13px;">Thông tin chẩn đoán và ghi chú y khoa từ bác sĩ điều trị</p>
+                    </div>
+
+                    <div style="display: flex; flex-direction: column; gap: 15px; text-align: left;">
+                        <div style="background: #f8fafc; border-radius: 12px; padding: 15px; border: 1px solid #edf2f7; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 14px;">
+                            <div>
+                                <span style="color: #718096; font-size: 11px; font-weight: 700; text-transform: uppercase; display: block;">Bác sĩ điều trị</span>
+                                <strong id="cb-result-doctor" style="color: #2d3748;">--</strong>
+                            </div>
+                            <div>
+                                <span style="color: #718096; font-size: 11px; font-weight: 700; text-transform: uppercase; display: block;">Ngày khám</span>
+                                <strong id="cb-result-date" style="color: #2d3748;">--</strong>
+                            </div>
+                        </div>
+
+                        <div style="font-size: 14px; border-bottom: 1px dashed #edf2f7; padding-bottom: 12px;">
+                            <span style="color: #718096; font-size: 12px; font-weight: 700; text-transform: uppercase; display: block; margin-bottom: 4px;">Triệu chứng khai báo</span>
+                            <div id="cb-result-symptoms" style="color: #4a5568; font-style: italic;">--</div>
+                        </div>
+
+                        <div>
+                            <span style="color: #718096; font-size: 12px; font-weight: 700; text-transform: uppercase; display: block; margin-bottom: 6px;">Chẩn đoán & Ghi chú của Bác sĩ</span>
+                            <div id="cb-result-notes" style="background: #fffdf5; border-left: 4px solid #dd6b20; border-radius: 4px; padding: 15px; font-size: 14.5px; color: #2d3748; line-height: 1.6; white-space: pre-line; box-shadow: inset 0 1px 3px rgba(0,0,0,0.02); min-height: 100px;">
+                                --
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="margin-top: 25px; text-align: center;">
+                        <button type="button" class="cb-modal-close" data-modal="cb-modal-view-result" style="background: #edf2f7; color: #4a5568; border: none; padding: 12px 30px; border-radius: 10px; font-weight: 700; font-size: 14px; cursor: pointer; transition: 0.3s; width: 100%;">Đóng lại</button>
                     </div>
                 </div>
             </div>
@@ -3938,6 +3995,21 @@ function clinic_booking_history_shortcode() {
                         $btn.prop('disabled', false).text('Gửi đánh giá ngay');
                     }
                 });
+            });
+            // Mở modal Xem kết quả
+            $(document).on('click', '.cb-patient-view-notes-btn', function() {
+                var docName = $(this).data('doctor');
+                var dateStr = $(this).data('date');
+                var symptoms = $(this).data('symptoms');
+                var notes = $(this).data('notes');
+                
+                $('#cb-result-doctor').text(docName);
+                $('#cb-result-date').text(dateStr);
+                $('#cb-result-symptoms').text(symptoms || 'Không khai báo triệu chứng');
+                $('#cb-result-notes').text(notes);
+                
+                $('#cb-modal-view-result').css('display', 'flex');
+                $('body').css('overflow', 'hidden');
             });
         });
     </script>
