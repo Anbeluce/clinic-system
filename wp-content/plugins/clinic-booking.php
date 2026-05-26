@@ -2605,6 +2605,11 @@ function clinic_booking_history_shortcode() {
         return '<div class="clinic-history-container"><p style="text-align:center;">Vui lòng <a href="' . home_url('/dang-nhap/') . '" style="color:#005086; font-weight:700;">đăng nhập</a> để xem lịch sử đặt lịch của bạn.</p></div>';
     }
 
+    // Enqueue Flatpickr and FontAwesome
+    wp_enqueue_style('flatpickr-css', 'https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css');
+    wp_enqueue_style('font-awesome', 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css');
+    wp_enqueue_script('flatpickr-js', 'https://cdn.jsdelivr.net/npm/flatpickr', array(), null, true);
+
     $current_user_id = get_current_user_id();
     $args = array(
         'post_type'      => 'appointment',
@@ -2630,6 +2635,7 @@ function clinic_booking_history_shortcode() {
                             <th>Bác sĩ / Chuyên khoa</th>
                             <th>Bệnh nhân</th>
                             <th>Trạng thái</th>
+                            <th>Thao tác</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -2659,6 +2665,11 @@ function clinic_booking_history_shortcode() {
                             $doctor = get_post_meta($post_id, '_selected_doctor', true);
                             $specialty = get_post_meta($post_id, '_specialty', true);
                             $p_name = get_post_meta($post_id, '_patient_name', true);
+
+                            // Kiểm tra quyền hủy/đổi lịch khám (Quy tắc 24h)
+                            $modify_check = cb_can_modify_appointment($post_id);
+                            $can_modify = !is_wp_error($modify_check);
+                            $modify_error = is_wp_error($modify_check) ? $modify_check->get_error_message() : '';
                         ?>
                             <tr>
                                 <td>
@@ -2675,10 +2686,63 @@ function clinic_booking_history_shortcode() {
                                         <?php echo esc_html($status_label); ?>
                                     </span>
                                 </td>
+                                <td>
+                                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                                        <?php if ($can_modify) : ?>
+                                            <button class="cb-patient-btn cb-patient-reschedule-btn" data-id="<?php echo $post_id; ?>" data-date="<?php echo esc_attr($booking_date); ?>" data-time="<?php echo esc_attr($booking_time); ?>" style="background: #3182ce; color: #fff; border: none; padding: 6px 12px; border-radius: 6px; font-weight: 700; font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; transition: all 0.2s;">
+                                                <i class="fas fa-calendar-alt"></i> Đổi lịch
+                                            </button>
+                                            <button class="cb-patient-btn cb-patient-cancel-btn" data-id="<?php echo $post_id; ?>" style="background: #e53e3e; color: #fff; border: none; padding: 6px 12px; border-radius: 6px; font-weight: 700; font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; transition: all 0.2s;">
+                                                <i class="fas fa-trash-alt"></i> Hủy
+                                            </button>
+                                        <?php else : ?>
+                                            <span style="color: #a0aec0; font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; gap: 4px;" title="<?php echo esc_attr($modify_error); ?>">
+                                                <i class="fas fa-lock"></i> Khóa
+                                            </span>
+                                        <?php endif; ?>
+                                    </div>
+                                </td>
                             </tr>
                         <?php endwhile; wp_reset_postdata(); ?>
                     </tbody>
                 </table>
+            </div>
+
+            <!-- Modal: Đổi lịch hẹn -->
+            <div id="cb-modal-reschedule" class="cb-modal">
+                <div class="cb-modal-content">
+                    <div class="cb-modal-header">
+                        <h3>Đổi lịch khám</h3>
+                        <span class="cb-modal-close" data-modal="cb-modal-reschedule">&times;</span>
+                    </div>
+                    <div class="cb-modal-body">
+                        <p>Chọn ngày và giờ khám mới của bạn. Sau khi đổi, lịch hẹn sẽ chờ bác sĩ xác nhận lại.</p>
+                        <input type="hidden" id="reschedule-app-id" value="">
+                        
+                        <div style="margin-bottom: 15px;">
+                            <label style="display: block; font-weight: 700; margin-bottom: 5px; color: #1a365d;">Ngày khám mới:</label>
+                            <input type="text" id="reschedule-new-date" placeholder="Chọn ngày khám mới..." style="width: 100%; border: 1px solid #cbd5e0; border-radius: 8px; padding: 10px; font-family: inherit; font-size: 14px;" readonly>
+                        </div>
+                        
+                        <div style="margin-bottom: 15px;">
+                            <label style="display: block; font-weight: 700; margin-bottom: 5px; color: #1a365d;">Giờ khám mới:</label>
+                            <select id="reschedule-new-time" style="width: 100%; border: 1px solid #cbd5e0; border-radius: 8px; padding: 10px; font-family: inherit; font-size: 14px; background: #fff; height: auto;">
+                                <option value="">-- Chọn khung giờ mới --</option>
+                                <?php 
+                                $slots_str = get_option('cb_time_slots', "08:00\n08:30\n09:00\n09:30\n10:00\n10:30\n14:00\n14:30\n15:00\n15:30\n16:00");
+                                $slots = array_filter(array_map('trim', explode("\n", $slots_str)));
+                                foreach ($slots as $slot) : 
+                                ?>
+                                    <option value="<?php echo esc_attr($slot); ?>"><?php echo esc_html($slot); ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="cb-modal-footer">
+                        <button class="cb-action-btn cb-btn-complete" id="cb-confirm-reschedule" style="background: #3182ce;">Xác nhận Đổi lịch</button>
+                        <button class="cb-action-btn cb-btn-view-notes" style="background: #edf2f7; color: #4a5568;" data-close="cb-modal-reschedule">Hủy</button>
+                    </div>
+                </div>
             </div>
         <?php else : ?>
             <div style="text-align: center; padding: 40px; background: #f8fafc; border-radius: 12px; border: 1px dashed #cbd5e0;">
@@ -2699,7 +2763,150 @@ function clinic_booking_history_shortcode() {
         .status-rejected { background: #fee2e2; color: #991b1b; }
         .status-cancelled { background: #edf2f7; color: #4a5568; }
         @media (max-width: 600px) { .clinic-history-container { padding: 20px; } }
+
+        /* Modal Styles */
+        .cb-modal { display: none; position: fixed; z-index: 9999; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.5); align-items: center; justify-content: center; backdrop-filter: blur(4px); transition: all 0.3s ease; font-family: inherit; }
+        .cb-modal-content { background-color: #fff; margin: auto; padding: 30px; border-radius: 20px; width: 90%; max-width: 500px; box-shadow: 0 20px 40px rgba(0,0,0,0.15); border: 1px solid #edf2f7; animation: cbSlideDown 0.3s ease-out; box-sizing: border-box; }
+        .cb-modal-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #edf2f7; padding-bottom: 15px; margin-bottom: 20px; }
+        .cb-modal-header h3 { margin: 0; font-size: 20px; font-weight: 800; color: #1a365d; }
+        .cb-modal-close { color: #a0aec0; font-size: 28px; font-weight: bold; cursor: pointer; transition: 0.2s; line-height: 1; }
+        .cb-modal-close:hover { color: #e53e3e; }
+        .cb-modal-body { margin-bottom: 25px; line-height: 1.5; color: #4a5568; }
+        .cb-modal-body p { margin-top: 0; margin-bottom: 15px; font-size: 14px; }
+        .cb-modal-footer { display: flex; justify-content: flex-end; gap: 10px; border-top: 1px solid #edf2f7; padding-top: 15px; }
+        .cb-action-btn { border: none; padding: 10px 20px; border-radius: 8px; font-weight: 700; font-size: 14px; cursor: pointer; transition: all 0.2s; color: #fff; }
+        .cb-action-btn:hover { opacity: 0.9; transform: translateY(-1px); }
+        .cb-action-btn:active { transform: translateY(0); }
+        
+        @keyframes cbSlideDown {
+            from { opacity: 0; transform: translateY(-50px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
     </style>
+    <script>
+        jQuery(document).ready(function($) {
+            var ajaxurl = '<?php echo esc_url( admin_url('admin-ajax.php') ); ?>';
+
+            // Khởi tạo Flatpickr cho ngày đổi lịch khám
+            var flatpickrInterval = setInterval(function() {
+                if (typeof flatpickr !== 'undefined') {
+                    clearInterval(flatpickrInterval);
+                    flatpickr("#reschedule-new-date", {
+                        dateFormat: "d/m/Y",
+                        minDate: "today",
+                        disableMobile: "true"
+                    });
+                }
+            }, 100);
+
+            // Mở modal Đổi lịch
+            $(document).on('click', '.cb-patient-reschedule-btn', function() {
+                var appId = $(this).data('id');
+                var oldDate = $(this).data('date');
+                var oldTime = $(this).data('time');
+                
+                $('#reschedule-app-id').val(appId);
+                $('#reschedule-new-date').val(oldDate);
+                $('#reschedule-new-time').val(oldTime);
+                
+                $('#cb-modal-reschedule').css('display', 'flex');
+                $('body').css('overflow', 'hidden');
+            });
+
+            // Đóng modal khi bấm close hoặc Hủy
+            $(document).on('click', '.cb-modal-close, [data-close]', function() {
+                var modalId = $(this).data('modal') || $(this).data('close');
+                $('#' + modalId).css('display', 'none');
+                $('body').css('overflow', 'auto');
+            });
+
+            // Đóng modal khi click ra ngoài vùng nội dung modal
+            $(window).on('click', function(event) {
+                if ($(event.target).hasClass('cb-modal')) {
+                    $(event.target).css('display', 'none');
+                    $('body').css('overflow', 'auto');
+                }
+            });
+
+            // Gửi yêu cầu Đổi lịch qua AJAX
+            $('#cb-confirm-reschedule').on('click', function() {
+                var $btn = $(this);
+                var appId = $('#reschedule-app-id').val();
+                var newDate = $('#reschedule-new-date').val();
+                var newTime = $('#reschedule-new-time').val();
+                
+                if (!newDate) {
+                    alert('Vui lòng chọn ngày khám mới.');
+                    return;
+                }
+                if (!newTime) {
+                    alert('Vui lòng chọn khung giờ khám mới.');
+                    return;
+                }
+                
+                $btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Đang xử lý...');
+                
+                $.ajax({
+                    url: ajaxurl,
+                    type: 'POST',
+                    data: {
+                        action: 'cb_patient_reschedule_appointment',
+                        appointment_id: appId,
+                        new_date: newDate,
+                        new_time: newTime
+                    },
+                    success: function(response) {
+                        if (response.success) {
+                            alert(response.data.message);
+                            location.reload();
+                        } else {
+                            alert('Lỗi: ' + response.data.message);
+                            $btn.prop('disabled', false).text('Xác nhận Đổi lịch');
+                        }
+                    },
+                    error: function() {
+                        alert('Đã xảy ra lỗi kết nối.');
+                        $btn.prop('disabled', false).text('Xác nhận Đổi lịch');
+                    }
+                });
+            });
+
+            // Gửi yêu cầu Hủy lịch qua AJAX
+            $(document).on('click', '.cb-patient-cancel-btn', function() {
+                var $btn = $(this);
+                var appId = $btn.data('id');
+                
+                if (!confirm('Bạn có chắc chắn muốn hủy lịch hẹn này không? Hành động này không thể hoàn tác.')) {
+                    return;
+                }
+                
+                var originalHtml = $btn.html();
+                $btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Hủy...');
+                
+                $.ajax({
+                    url: ajaxurl,
+                    type: 'POST',
+                    data: {
+                        action: 'cb_patient_cancel_appointment',
+                        appointment_id: appId
+                    },
+                    success: function(response) {
+                        if (response.success) {
+                            alert(response.data.message);
+                            location.reload();
+                        } else {
+                            alert('Lỗi: ' + response.data.message);
+                            $btn.prop('disabled', false).html(originalHtml);
+                        }
+                    },
+                    error: function() {
+                        alert('Đã xảy ra lỗi kết nối.');
+                        $btn.prop('disabled', false).html(originalHtml);
+                    }
+                });
+            });
+        });
+    </script>
     <?php
     return ob_get_clean();
 }
@@ -3774,5 +3981,281 @@ function cb_send_appointment_rejected_email($appointment_id, $reject_reason) {
     $message .= "Trân trọng,\nHệ thống Phòng khám";
 
     return cb_send_email($patient_email, $subject, $message, $patient_name);
+}
+
+/**
+ * =========================================================================
+ * PHASE 2 - APPOINTMENT MANAGEMENT HELPERS & AJAX FOR PATIENTS
+ * =========================================================================
+ */
+
+/**
+ * Kiểm tra tính hợp lệ của lịch hẹn trước khi hủy hoặc đổi lịch (Quy tắc 24h & Quyền sở hữu)
+ */
+function cb_can_modify_appointment($appointment_id) {
+    if (!is_user_logged_in()) {
+        return new WP_Error('not_logged_in', 'Bạn cần đăng nhập để thực hiện thao tác này.');
+    }
+
+    $appointment_id = intval($appointment_id);
+    $post = get_post($appointment_id);
+    if (!$post || $post->post_type !== 'appointment') {
+        return new WP_Error('invalid_appointment', 'Lịch hẹn không tồn tại.');
+    }
+
+    $current_user_id = get_current_user_id();
+
+    // Phân quyền: Phải là tác giả của lịch hẹn (hoặc Admin)
+    if (intval($post->post_author) !== $current_user_id && !current_user_can('administrator')) {
+        return new WP_Error('unauthorized', 'Bạn không có quyền thao tác trên lịch hẹn này.');
+    }
+
+    // Kiểm tra trạng thái: chỉ cho phép hủy/đổi nếu trạng thái là pending hoặc publish
+    $status = $post->post_status;
+    if ($status !== 'pending' && $status !== 'publish') {
+        return new WP_Error('invalid_status', 'Chỉ có thể hủy hoặc đổi lịch hẹn chưa diễn ra.');
+    }
+
+    // Kiểm tra quy tắc 24 giờ
+    $booking_date = get_post_meta($appointment_id, '_booking_date', true);
+    $booking_time = get_post_meta($appointment_id, '_booking_time', true);
+
+    if (empty($booking_date)) {
+        return new WP_Error('missing_date', 'Không tìm thấy ngày khám để kiểm tra.');
+    }
+
+    // Nếu thiếu giờ khám, mặc định lấy 00:00 của ngày đó
+    if (empty($booking_time)) {
+        $booking_time = '00:00';
+    }
+
+    $datetime_str = trim($booking_date) . ' ' . trim($booking_time);
+    $booking_datetime = DateTime::createFromFormat('d/m/Y H:i', $datetime_str);
+
+    if (!$booking_datetime) {
+        // Fallback thử định dạng ngày d/m/Y
+        $booking_datetime = DateTime::createFromFormat('d/m/Y', trim($booking_date));
+    }
+
+    if (!$booking_datetime) {
+        return new WP_Error('invalid_datetime_format', 'Không thể xác định thời gian lịch hẹn.');
+    }
+
+    $booking_timestamp = $booking_datetime->getTimestamp();
+    $current_timestamp = current_time('timestamp'); // Sử dụng múi giờ của WordPress
+
+    $time_difference = $booking_timestamp - $current_timestamp;
+
+    // Phải cách thời điểm hiện tại ít nhất 24 giờ (24 * 3600 = 86400 giây)
+    if ($time_difference < 86400) {
+        return new WP_Error('too_late', 'Bạn chỉ có thể hủy hoặc đổi lịch khám trước giờ hẹn ít nhất 24 tiếng.');
+    }
+
+    return true; // Hợp lệ
+}
+
+/**
+ * AJAX: Bệnh nhân hủy lịch hẹn
+ */
+add_action('wp_ajax_cb_patient_cancel_appointment', 'cb_ajax_patient_cancel_appointment');
+function cb_ajax_patient_cancel_appointment() {
+    $appointment_id = isset($_POST['appointment_id']) ? intval($_POST['appointment_id']) : 0;
+    
+    $check = cb_can_modify_appointment($appointment_id);
+    if (is_wp_error($check)) {
+        wp_send_json_error(array('message' => $check->get_error_message()));
+    }
+
+    // Cập nhật trạng thái thành draft (Đã hủy)
+    $update = wp_update_post(array(
+        'ID'          => $appointment_id,
+        'post_status' => 'draft'
+    ));
+
+    if (is_wp_error($update)) {
+        wp_send_json_error(array('message' => 'Có lỗi xảy ra khi hủy lịch hẹn.'));
+    }
+
+    // Ghi nhận thời gian hủy và người hủy
+    update_post_meta($appointment_id, '_cancelled_at', current_time('mysql'));
+    update_post_meta($appointment_id, '_cancelled_by', 'patient');
+
+    // Tích hợp thông báo email & webhook
+    cb_send_appointment_cancelled_notifications($appointment_id);
+
+    wp_send_json_success(array('message' => 'Hủy lịch hẹn thành công.'));
+}
+
+/**
+ * AJAX: Bệnh nhân đổi lịch hẹn
+ */
+add_action('wp_ajax_cb_patient_reschedule_appointment', 'cb_ajax_patient_reschedule_appointment');
+function cb_ajax_patient_reschedule_appointment() {
+    $appointment_id = isset($_POST['appointment_id']) ? intval($_POST['appointment_id']) : 0;
+    $new_date       = isset($_POST['new_date']) ? sanitize_text_field($_POST['new_date']) : '';
+    $new_time       = isset($_POST['new_time']) ? sanitize_text_field($_POST['new_time']) : '';
+
+    if (empty($new_date) || empty($new_time)) {
+        wp_send_json_error(array('message' => 'Vui lòng chọn ngày và giờ mới.'));
+    }
+    
+    $check = cb_can_modify_appointment($appointment_id);
+    if (is_wp_error($check)) {
+        wp_send_json_error(array('message' => $check->get_error_message()));
+    }
+
+    // Lưu lại thời gian cũ vào meta để ghi nhận lịch sử đổi
+    $old_date = get_post_meta($appointment_id, '_booking_date', true);
+    $old_time = get_post_meta($appointment_id, '_booking_time', true);
+
+    update_post_meta($appointment_id, '_old_booking_date', $old_date);
+    update_post_meta($appointment_id, '_old_booking_time', $old_time);
+    update_post_meta($appointment_id, '_rescheduled_at', current_time('mysql'));
+
+    // Cập nhật ngày và giờ khám mới
+    update_post_meta($appointment_id, '_booking_date', $new_date);
+    update_post_meta($appointment_id, '_booking_time', $new_time);
+
+    // Chuyển trạng thái về pending (Chờ duyệt lại)
+    $update = wp_update_post(array(
+        'ID'          => $appointment_id,
+        'post_status' => 'pending'
+    ));
+
+    if (is_wp_error($update)) {
+        wp_send_json_error(array('message' => 'Có lỗi xảy ra khi đổi lịch hẹn.'));
+    }
+
+    // Gửi email & webhook thông báo
+    cb_send_appointment_rescheduled_notifications($appointment_id, $old_date, $old_time);
+
+    wp_send_json_success(array('message' => 'Đổi lịch hẹn thành công! Lịch hẹn của bạn đã được chuyển về trạng thái Chờ duyệt lại.'));
+}
+
+/**
+ * Helper gửi webhook Discord/Slack thông báo cho Admin
+ */
+function cb_send_webhook($webhook_title, $embed_title, $fields, $color = 3447003) {
+    $webhook_url = get_option('cb_webhook_url');
+    if (empty($webhook_url)) return false;
+
+    $webhook_data = array(
+        'content' => $webhook_title,
+        'embeds' => array(
+            array(
+                'title'  => $embed_title,
+                'color'  => $color,
+                'fields' => $fields
+            )
+        )
+    );
+
+    wp_remote_post($webhook_url, array(
+        'headers'     => array('Content-Type' => 'application/json'),
+        'body'        => wp_json_encode($webhook_data),
+        'method'      => 'POST',
+        'data_format' => 'body',
+        'timeout'     => 15,
+        'sslverify'   => false
+    ));
+
+    return true;
+}
+
+/**
+ * Thông báo đổi lịch hẹn (gửi email cho bác sĩ + gọi webhook cho Admin)
+ */
+function cb_send_appointment_rescheduled_notifications($appointment_id, $old_date, $old_time) {
+    $patient_name = get_post_meta($appointment_id, '_patient_name', true);
+    $patient_phone = get_post_meta($appointment_id, '_patient_phone', true);
+    $new_date = get_post_meta($appointment_id, '_booking_date', true);
+    $new_time = get_post_meta($appointment_id, '_booking_time', true);
+
+    $doctor_id = get_post_meta($appointment_id, '_doctor_id', true);
+    $doctor_name = $doctor_id ? get_the_title($doctor_id) : get_post_meta($appointment_id, '_selected_doctor', true);
+    
+    // 1. Gửi email cho Bác sĩ (nếu bác sĩ có email)
+    if ($doctor_id) {
+        $doctor_user_id = get_post_meta($doctor_id, '_doctor_user_id', true);
+        if ($doctor_user_id) {
+            $doctor_user = get_userdata($doctor_user_id);
+            if ($doctor_user && !empty($doctor_user->user_email)) {
+                $subject = "🔔 Thông báo: Bệnh nhân thay đổi thời gian lịch hẹn - {$patient_name}";
+                $message = "Kính gửi Bác sĩ {$doctor_name},\n\n";
+                $message .= "Bệnh nhân {$patient_name} vừa thay đổi thời gian khám của lịch hẹn (ID: {$appointment_id}).\n\n";
+                $message .= "Thông tin thay đổi:\n";
+                $message .= "- Thời gian cũ: {$old_time} ngày {$old_date}\n";
+                $message .= "- Thời gian mới: {$new_time} ngày {$new_date}\n\n";
+                $message .= "Lịch hẹn hiện đang ở trạng thái [Chờ xác nhận lại]. Vui lòng truy cập trang Dashboard Bác sĩ trên website để kiểm tra và duyệt lịch.\n\n";
+                $message .= "Trân trọng,\nHệ thống Phòng khám";
+
+                cb_send_email($doctor_user->user_email, $subject, $message, $doctor_name);
+            }
+        }
+    }
+
+    // 2. Gửi Webhook cho Admin
+    $fields = array(
+        array('name' => 'Mã lịch hẹn', 'value' => '#' . $appointment_id, 'inline' => true),
+        array('name' => 'Họ tên bệnh nhân', 'value' => $patient_name, 'inline' => true),
+        array('name' => 'Điện thoại', 'value' => $patient_phone, 'inline' => true),
+        array('name' => 'Bác sĩ phụ trách', 'value' => $doctor_name, 'inline' => true),
+        array('name' => 'Thời gian CŨ', 'value' => $old_time . ' ngày ' . $old_date, 'inline' => false),
+        array('name' => 'Thời gian MỚI', 'value' => $new_time . ' ngày ' . $new_date, 'inline' => false),
+    );
+
+    cb_send_webhook(
+        '🔄 **BỆNH NHÂN YÊU CẦU ĐỔI LỊCH HẸN**',
+        'Chi tiết thông tin đổi lịch',
+        $fields,
+        15105570 // Màu cam (Warning)
+    );
+}
+
+/**
+ * Thông báo hủy lịch hẹn (gửi email cho bác sĩ + gọi webhook cho Admin)
+ */
+function cb_send_appointment_cancelled_notifications($appointment_id) {
+    $patient_name = get_post_meta($appointment_id, '_patient_name', true);
+    $patient_phone = get_post_meta($appointment_id, '_patient_phone', true);
+    $booking_date = get_post_meta($appointment_id, '_booking_date', true);
+    $booking_time = get_post_meta($appointment_id, '_booking_time', true);
+
+    $doctor_id = get_post_meta($appointment_id, '_doctor_id', true);
+    $doctor_name = $doctor_id ? get_the_title($doctor_id) : get_post_meta($appointment_id, '_selected_doctor', true);
+    
+    // 1. Gửi email cho Bác sĩ
+    if ($doctor_id) {
+        $doctor_user_id = get_post_meta($doctor_id, '_doctor_user_id', true);
+        if ($doctor_user_id) {
+            $doctor_user = get_userdata($doctor_user_id);
+            if ($doctor_user && !empty($doctor_user->user_email)) {
+                $subject = "❌ Thông báo: Lịch hẹn khám đã bị HỦY - {$patient_name}";
+                $message = "Kính gửi Bác sĩ {$doctor_name},\n\n";
+                $message .= "Lịch khám của bệnh nhân {$patient_name} (ID: {$appointment_id}) vào lúc {$booking_time} ngày {$booking_date} đã bị HỦY.\n\n";
+                $message .= "Bệnh nhân đã thực hiện yêu cầu hủy lịch này trên hệ thống.\n\n";
+                $message .= "Hệ thống tự động giải phóng khung giờ trên để tiếp nhận bệnh nhân khác.\n\n";
+                $message .= "Trân trọng,\nHệ thống Phòng khám";
+
+                cb_send_email($doctor_user->user_email, $subject, $message, $doctor_name);
+            }
+        }
+    }
+
+    // 2. Gửi Webhook cho Admin
+    $fields = array(
+        array('name' => 'Mã lịch hẹn', 'value' => '#' . $appointment_id, 'inline' => true),
+        array('name' => 'Họ tên bệnh nhân', 'value' => $patient_name, 'inline' => true),
+        array('name' => 'Điện thoại', 'value' => $patient_phone, 'inline' => true),
+        array('name' => 'Bác sĩ phụ trách', 'value' => $doctor_name, 'inline' => true),
+        array('name' => 'Thời gian khám bị hủy', 'value' => $booking_time . ' ngày ' . $booking_date, 'inline' => false),
+    );
+
+    cb_send_webhook(
+        '❌ **BỆNH NHÂN HỦY LỊCH HẸN**',
+        'Chi tiết thông tin lịch hủy',
+        $fields,
+        13631488 // Màu đỏ (Danger)
+    );
 }
 ?>
