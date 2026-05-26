@@ -2686,14 +2686,15 @@ function clinic_services_grid_shortcode() {
 add_shortcode('clinic_services', 'clinic_services_grid_shortcode');
 
 /**
- * Shortcode for Custom Login Form
+ * Handle Auth Forms on Init
+ * Fixes Cookie issues (Headers already sent) on Docker/VPS Reverse Proxy environments
  */
-function clinic_login_form_shortcode() {
-    if ( is_user_logged_in() ) {
-        return '<div class="clinic-auth-container"><p>Bạn đã đăng nhập. <a href="' . wp_logout_url( home_url() ) . '">Đăng xuất</a></p></div>';
-    }
+add_action('init', 'cb_handle_auth_forms');
+global $cb_auth_status_message;
+function cb_handle_auth_forms() {
+    global $cb_auth_status_message;
+    $cb_auth_status_message = '';
 
-    $output = '';
     if ( isset( $_POST['clinic_login_submit'] ) ) {
         $creds = array(
             'user_login'    => sanitize_text_field( $_POST['log'] ),
@@ -2701,35 +2702,93 @@ function clinic_login_form_shortcode() {
             'remember'      => isset( $_POST['rememberme'] ),
         );
 
-        $user = wp_signon( $creds, false );
+        $user = wp_signon( $creds, is_ssl() );
 
         if ( is_wp_error( $user ) ) {
             $error_text = $user->get_error_message();
-            // Làm sạch thông báo lỗi để gọn hơn
             if (strpos($error_text, 'Mật khẩu') !== false) {
                 $error_text = 'Mật khẩu không chính xác. Vui lòng thử lại.';
             } elseif (strpos($error_text, 'tên người dùng') !== false) {
                 $error_text = 'Tên đăng nhập hoặc Email không tồn tại.';
             }
-            $output .= '<div class="clinic-auth-error">' . $error_text . '</div>';
-
-            // Đưa script vào $output thay vì echo trực tiếp
-            $output .= '<script>
-                if ( window.history.replaceState ) {
-                    window.history.replaceState( null, null, window.location.href );
-                }
-            </script>';
+            $cb_auth_status_message = '<div class="clinic-auth-error">' . $error_text . '</div>';
         } else {
-            // Đưa script chuyển hướng vào chuỗi return để chạy an toàn
-            return '<script>window.location.href="' . home_url() . '";</script>';
+            wp_safe_redirect( home_url() );
+            exit;
         }
+    }
+
+    if ( isset( $_POST['clinic_register_submit'] ) ) {
+        $username = sanitize_user( $_POST['user_login'] );
+        $email    = sanitize_email( $_POST['user_email'] );
+        $password = $_POST['user_pass'];
+        $fullname = sanitize_text_field( $_POST['full_name'] );
+
+        $errors = new WP_Error();
+
+        if ( empty( $username ) || empty( $email ) || empty( $password ) ) {
+            $errors->add( 'field', 'Vui lòng điền đầy đủ các trường bắt buộc.' );
+        }
+        if ( username_exists( $username ) ) {
+            $errors->add( 'user_name', 'Tên đăng nhập đã tồn tại.' );
+        }
+        if ( ! is_email( $email ) ) {
+            $errors->add( 'email_invalid', 'Địa chỉ Email không hợp lệ.' );
+        }
+        if ( email_exists( $email ) ) {
+            $errors->add( 'email_exists', 'Địa chỉ Email này đã được đăng ký.' );
+        }
+
+        if ( empty( $errors->get_error_messages() ) ) {
+            $userdata = array(
+                'user_login'   => $username,
+                'user_pass'    => $password,
+                'user_email'   => $email,
+                'display_name' => $fullname,
+                'role'         => 'subscriber'
+            );
+            
+            $user_id = wp_insert_user( $userdata );
+
+            if ( ! is_wp_error( $user_id ) ) {
+                $creds = array(
+                    'user_login'    => $username,
+                    'user_password' => $password,
+                    'remember'      => true
+                );
+                wp_signon( $creds, is_ssl() );
+                
+                $cb_auth_status_message = '<div style="background: #d4edda; color: #155724; padding: 15px; border-radius: 8px; margin-bottom: 20px; text-align: center;">
+                    <strong>✅ Đăng ký thành công!</strong><br>Hệ thống đang chuyển hướng...
+                </div>';
+                $cb_auth_status_message .= '<script>setTimeout(function(){ window.location.href="' . home_url() . '"; }, 2000);</script>';
+            } else {
+                $cb_auth_status_message = '<p style="color:red; text-align:center; font-weight:bold;">❌ Lỗi: ' . $user_id->get_error_message() . '</p>';
+            }
+        } else {
+            $cb_auth_status_message = '<div style="background: #f8d7da; color: #721c24; padding: 15px; border-radius: 8px; margin-bottom: 20px;">';
+            foreach ( $errors->get_error_messages() as $error ) {
+                $cb_auth_status_message .= '• ' . $error . '<br>';
+            }
+            $cb_auth_status_message .= '</div>';
+        }
+    }
+}
+
+/**
+ * Shortcode for Custom Login Form
+ */
+function clinic_login_form_shortcode() {
+    global $cb_auth_status_message;
+    if ( is_user_logged_in() ) {
+        return '<div class="clinic-auth-container"><p>Bạn đã đăng nhập. <a href="' . wp_logout_url( home_url() ) . '">Đăng xuất</a></p></div>';
     }
 
     ob_start();
     ?>
     <div class="clinic-auth-page">
         <div class="clinic-auth-container">
-            <div class="clinic-auth-status"><?php echo $output; ?></div>
+            <div class="clinic-auth-status"><?php echo isset($_POST['clinic_login_submit']) ? $cb_auth_status_message : ''; ?></div>
             <form method="post" class="clinic-auth-form" id="clinic-login-form" novalidate>
                 <h3>Đăng nhập</h3>
                 <div class="input-group">
@@ -2767,73 +2826,16 @@ add_shortcode( 'clinic_login_form', 'clinic_login_form_shortcode' );
  * Shortcode for Custom Registration Form
  */
 function clinic_register_form_shortcode() {
+    global $cb_auth_status_message;
     if ( is_user_logged_in() ) {
         return '<div class="clinic-auth-container"><p>Bạn đã đăng nhập.</p></div>';
-    }
-
-    $output = '';
-    if ( isset( $_POST['clinic_register_submit'] ) ) {
-        $username = sanitize_user( $_POST['user_login'] );
-        $email    = sanitize_email( $_POST['user_email'] );
-        $password = $_POST['user_pass'];
-        $fullname = sanitize_text_field( $_POST['full_name'] );
-
-        $errors = new WP_Error();
-
-        if ( empty( $username ) || empty( $email ) || empty( $password ) ) {
-            $errors->add( 'field', 'Vui lòng điền đầy đủ các trường bắt buộc.' );
-        }
-        if ( username_exists( $username ) ) {
-            $errors->add( 'user_name', 'Tên đăng nhập đã tồn tại.' );
-        }
-        if ( ! is_email( $email ) ) {
-            $errors->add( 'email_invalid', 'Địa chỉ Email không hợp lệ.' );
-        }
-        if ( email_exists( $email ) ) {
-            $errors->add( 'email_exists', 'Địa chỉ Email này đã được đăng ký.' );
-        }
-
-        if ( empty( $errors->get_error_messages() ) ) {
-            $userdata = array(
-                'user_login'   => $username,
-                'user_pass'    => $password,
-                'user_email'   => $email,
-                'display_name' => $fullname,
-                'role'         => 'subscriber'
-            );
-            
-            $user_id = wp_insert_user( $userdata );
-
-            if ( ! is_wp_error( $user_id ) ) {
-                // Tự động đăng nhập sau khi đăng ký thành công
-                $creds = array(
-                    'user_login'    => $username,
-                    'user_password' => $password,
-                    'remember'      => true
-                );
-                wp_signon( $creds, false );
-
-                $output .= '<div style="background: #d4edda; color: #155724; padding: 15px; border-radius: 8px; margin-bottom: 20px; text-align: center;">
-                    <strong>✅ Đăng ký thành công!</strong><br>Hệ thống đang chuyển hướng...
-                </div>';
-                $output .= '<script>setTimeout(function(){ window.location.href="' . home_url() . '"; }, 2000);</script>';
-            } else {
-                $output .= '<p style="color:red; text-align:center; font-weight:bold;">❌ Lỗi: ' . $user_id->get_error_message() . '</p>';
-            }
-        } else {
-            $output .= '<div style="background: #f8d7da; color: #721c24; padding: 15px; border-radius: 8px; margin-bottom: 20px;">';
-            foreach ( $errors->get_error_messages() as $error ) {
-                $output .= '• ' . $error . '<br>';
-            }
-            $output .= '</div>';
-        }
     }
 
     ob_start();
     ?>
     <div class="clinic-auth-page">
         <div class="clinic-auth-container">
-            <div class="clinic-auth-status"><?php echo $output; ?></div>
+            <div class="clinic-auth-status"><?php echo isset($_POST['clinic_register_submit']) ? $cb_auth_status_message : ''; ?></div>
             <form method="post" class="clinic-auth-form" id="clinic-register-form" novalidate>
                 <h3>Đăng ký tài khoản</h3>
                 <div class="input-group">
