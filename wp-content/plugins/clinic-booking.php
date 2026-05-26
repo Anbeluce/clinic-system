@@ -219,9 +219,23 @@ function clinic_booking_form_shortcode() {
     // Xử lý dữ liệu khi người dùng bấm nút "Xác nhận Đặt lịch"
     if ( isset( $_POST['submit_booking'] ) ) {
         // Làm sạch dữ liệu đầu vào để bảo mật
+        $selected_doctor = sanitize_text_field( $_POST['selected_doctor'] ?? '' );
+        $doctor_id       = isset( $_POST['doctor_id'] ) ? intval( $_POST['doctor_id'] ) : 0;
         $clinic          = sanitize_text_field( $_POST['clinic'] ?? '' );
         $specialty       = sanitize_text_field( $_POST['specialty'] ?? '' );
-        $selected_doctor = sanitize_text_field( $_POST['selected_doctor'] ?? '' );
+
+        // Nếu đã chọn bác sĩ nhưng bỏ qua 2 trường chi nhánh / chuyên khoa, tự động lấy thông tin từ bác sĩ
+        if ( $doctor_id && ( empty($clinic) || empty($specialty) ) ) {
+            $doc_branches = get_the_terms($doctor_id, 'clinic_branch');
+            if ( $doc_branches && !is_wp_error($doc_branches) && empty($clinic) ) {
+                $clinic = $doc_branches[0]->name;
+            }
+            $doc_specialties = get_the_terms($doctor_id, 'specialty');
+            if ( $doc_specialties && !is_wp_error($doc_specialties) && empty($specialty) ) {
+                $specialty = $doc_specialties[0]->name;
+            }
+        }
+
         $booking_date    = sanitize_text_field( $_POST['booking_date'] ?? '' );
         $booking_time    = sanitize_text_field( $_POST['booking_time'] ?? '' );
         
@@ -662,7 +676,11 @@ function clinic_booking_form_shortcode() {
                                         if (!empty($avg_rating) && floatval($avg_rating) > 0) {
                                             $rating_text = ' (⭐ ' . $avg_rating . ' - ' . $review_count . ' đánh giá)';
                                         }
-                                        echo '<option value="' . esc_attr($doc->post_title) . '" data-doctor-id="' . esc_attr($doc->ID) . '">' . esc_html($doc->post_title) . esc_html($rating_text) . '</option>';
+                                        $branches = get_the_terms($doc->ID, 'clinic_branch');
+                                        $b_id = ($branches && !is_wp_error($branches)) ? $branches[0]->term_id : '';
+                                        $specs = get_the_terms($doc->ID, 'specialty');
+                                        $s_id = ($specs && !is_wp_error($specs)) ? $specs[0]->term_id : '';
+                                        echo '<option value="' . esc_attr($doc->post_title) . '" data-doctor-id="' . esc_attr($doc->ID) . '" data-branch-id="' . esc_attr($b_id) . '" data-specialty-id="' . esc_attr($s_id) . '">' . esc_html($doc->post_title) . esc_html($rating_text) . '</option>';
                                     }
                                 }
                                 ?>
@@ -1094,6 +1112,8 @@ function clinic_booking_form_shortcode() {
                                     opt.value = doc.title;
                                     opt.textContent = doc.title;
                                     opt.setAttribute('data-doctor-id', doc.id);
+                                    opt.setAttribute('data-branch-id', doc.branch_id);
+                                    opt.setAttribute('data-specialty-id', doc.specialty_id);
                                     doctorSelect.appendChild(opt);
                                 });
                                 // 2. Cập nhật Danh sách Card bên phải
@@ -1167,8 +1187,15 @@ function clinic_booking_form_shortcode() {
             }
             initPagination();
 
-            clinicSelect.addEventListener('change', fetchSpecialties);
-            specialtySelect.addEventListener('change', fetchDoctors);
+            var isAutoSelecting = false;
+            clinicSelect.addEventListener('change', function() {
+                if (isAutoSelecting) return;
+                fetchSpecialties();
+            });
+            specialtySelect.addEventListener('change', function() {
+                if (isAutoSelecting) return;
+                fetchDoctors();
+            });
             
             // Hàm cập nhật ID bác sĩ vào hidden field
             function updateDoctorHiddenId() {
@@ -1178,6 +1205,38 @@ function clinic_booking_form_shortcode() {
                 
                 // Fetch schedule and update Flatpickr disable rules
                 cb_fetch_doctor_schedule_and_update_flatpickr();
+
+                // Tự động điền chi nhánh và chuyên khoa khi chọn bác sĩ trực tiếp
+                if (selectedOption && doctorId && !isAutoSelecting) {
+                    var branchId = selectedOption.getAttribute('data-branch-id');
+                    var specialtyId = selectedOption.getAttribute('data-specialty-id');
+                    
+                    if (branchId || specialtyId) {
+                        isAutoSelecting = true;
+                        
+                        if (branchId) {
+                            for (var i = 0; i < clinicSelect.options.length; i++) {
+                                if (clinicSelect.options[i].getAttribute('data-id') == branchId) {
+                                    clinicSelect.selectedIndex = i;
+                                    removeError(clinicSelect);
+                                    break;
+                                }
+                            }
+                        }
+                        
+                        if (specialtyId) {
+                            for (var i = 0; i < specialtySelect.options.length; i++) {
+                                if (specialtySelect.options[i].getAttribute('data-id') == specialtyId) {
+                                    specialtySelect.selectedIndex = i;
+                                    removeError(specialtySelect);
+                                    break;
+                                }
+                            }
+                        }
+                        
+                        isAutoSelecting = false;
+                    }
+                }
             }
 
             // Cập nhật khi người dùng chọn thủ công
@@ -1251,20 +1310,30 @@ function clinic_booking_form_shortcode() {
 
             btnNext.addEventListener('click', function() {
                 var valid = true;
-                var requiredFieldsStep1 = [
-                    { id: 'clinic', msg: 'Vui lòng chọn phòng khám' },
-                    { id: 'specialty', msg: 'Vui lòng chọn chuyên khoa' },
-                    { id: 'selected_doctor', msg: 'Vui lòng chọn bác sĩ' },
-                    { id: 'booking_date', msg: 'Vui lòng chọn ngày' },
-                    { id: 'booking_time', msg: 'Vui lòng chọn giờ' }
-                ];
+                var doctorEl = document.getElementById('selected_doctor');
+                var isDoctorSelected = doctorEl && doctorEl.value.trim() !== '';
+
+                var requiredFieldsStep1 = [];
+                
+                if (!isDoctorSelected) {
+                    requiredFieldsStep1.push({ id: 'clinic', msg: 'Vui lòng chọn phòng khám' });
+                    requiredFieldsStep1.push({ id: 'specialty', msg: 'Vui lòng chọn chuyên khoa' });
+                    requiredFieldsStep1.push({ id: 'selected_doctor', msg: 'Vui lòng chọn bác sĩ' });
+                } else {
+                    removeError(document.getElementById('clinic'));
+                    removeError(document.getElementById('specialty'));
+                    requiredFieldsStep1.push({ id: 'selected_doctor', msg: 'Vui lòng chọn bác sĩ' });
+                }
+                
+                requiredFieldsStep1.push({ id: 'booking_date', msg: 'Vui lòng chọn ngày' });
+                requiredFieldsStep1.push({ id: 'booking_time', msg: 'Vui lòng chọn giờ' });
                 
                 requiredFieldsStep1.forEach(function(field) {
                     var el = document.getElementById(field.id);
-                    if (!el.value.trim()) {
+                    if (el && !el.value.trim()) {
                         showError(el, field.msg);
                         valid = false;
-                    } else {
+                    } else if (el) {
                         removeError(el);
                     }
                 });
@@ -1744,7 +1813,16 @@ function cb_ajax_get_doctors() {
             $query->the_post();
             $id = get_the_ID();
             $title = get_the_title();
-            $doctors_data[] = array('id' => $id, 'title' => $title);
+            $branches = get_the_terms($id, 'clinic_branch');
+            $doc_branch_id = ($branches && !is_wp_error($branches)) ? $branches[0]->term_id : 0;
+            $specialties = get_the_terms($id, 'specialty');
+            $doc_specialty_id = ($specialties && !is_wp_error($specialties)) ? $specialties[0]->term_id : 0;
+            $doctors_data[] = array(
+                'id' => $id, 
+                'title' => $title, 
+                'branch_id' => $doc_branch_id, 
+                'specialty_id' => $doc_specialty_id
+            );
 
             $count++;
             $display = ($count > 4) ? 'none' : 'flex';
