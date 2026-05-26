@@ -85,7 +85,7 @@ get_header(); ?>
   <?php do_action( 'vw_hospital_lite_below_slider' ); ?>
 
   <?php if( get_theme_mod('vw_hospital_lite_sec1_title') != ''){ ?>
-    <section class=" services wow zoomInDown delay-1000" data-wow-duration="2s">
+    <section class="services">
       <div class="container">
         <?php if( get_theme_mod('vw_hospital_lite_sec1_title') != ''){ ?>     
           <h2><?php echo esc_html(get_theme_mod('vw_hospital_lite_sec1_title','vw-hospital-lite')); ?></h2>
