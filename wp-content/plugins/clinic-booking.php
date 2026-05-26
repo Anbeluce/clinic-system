@@ -3316,9 +3316,26 @@ function doctor_dashboard_shortcode() {
             .action-cell { justify-content: flex-end; }
             .dd-tabs { flex-wrap: wrap; }
         }
+
+        /* Doctor Dashboard Main Nav Styles */
+        .dd-main-nav { display: flex; gap: 15px; margin-bottom: 35px; border-bottom: 2px solid #edf2f7; padding-bottom: 15px; }
+        .dd-nav-btn { background: none; border: none; padding: 12px 24px; font-size: 16px; font-weight: 700; color: #718096; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; border-radius: 12px; transition: all 0.2s; font-family: inherit; }
+        .dd-nav-btn:hover { color: #2b6cb0; background: #f7fafc; }
+        .dd-nav-btn.active { color: #fff !important; background: linear-gradient(135deg, #005086 0%, #2b6cb0 100%) !important; box-shadow: 0 4px 12px rgba(43,108,176,0.2); }
     </style>
 
     <div class="doctor-dashboard">
+        <!-- Main Tab Navigation -->
+        <div class="dd-main-nav">
+            <button class="dd-nav-btn active" data-tab="appointments">
+                <i class="fas fa-calendar-check"></i> Lịch hẹn Bệnh nhân
+            </button>
+            <button class="dd-nav-btn" data-tab="schedule">
+                <i class="fas fa-user-clock"></i> Lịch làm việc & Ngày nghỉ
+            </button>
+        </div>
+
+        <div id="dd-tab-content-appointments" class="dd-tab-pane active">
         <div class="dd-header">
             <div>
                 <h2>Bác sĩ: <?php echo esc_html($doctor_name); ?></h2>
@@ -3467,8 +3484,13 @@ function doctor_dashboard_shortcode() {
                     </tbody>
                 </table>
             <?php endif; ?>
+        </div> <!-- Đóng dd-tab-content-appointments -->
+        
+        <!-- Tab: Lịch làm việc & Ngày nghỉ -->
+        <div id="dd-tab-content-schedule" class="dd-tab-pane" style="display: none;">
+            <?php echo cb_render_doctor_schedule_manager_html($doctor_id); ?>
         </div>
-    </div>
+    </div> <!-- Đóng doctor-dashboard -->
 
     <!-- Modal: Từ chối lịch hẹn -->
     <div id="cb-modal-reject" class="cb-modal">
@@ -3543,6 +3565,16 @@ function doctor_dashboard_shortcode() {
     <script>
     jQuery(document).ready(function($) {
         var ajaxurl = '<?php echo admin_url('admin-ajax.php'); ?>';
+
+        // Xử lý chuyển Main Nav Tabs
+        $('.dd-nav-btn').on('click', function() {
+            var tabId = $(this).data('tab');
+            $('.dd-nav-btn').removeClass('active');
+            $(this).addClass('active');
+            
+            $('.dd-tab-pane').removeClass('active').hide();
+            $('#dd-tab-content-' + tabId).addClass('active').show();
+        });
 
         // 1. Logic Lọc theo Tabs
         $('.dd-tab-btn').on('click', function() {
@@ -4257,5 +4289,469 @@ function cb_send_appointment_cancelled_notifications($appointment_id) {
         $fields,
         13631488 // Màu đỏ (Danger)
     );
+}
+
+/**
+ * =========================================================================
+ * PHASE 3 - DOCTOR WEEKLY SCHEDULE & DAYS OFF AJAX HANDLERS
+ * =========================================================================
+ */
+
+add_action('wp_ajax_cb_save_doctor_schedule', 'cb_ajax_save_doctor_schedule');
+function cb_ajax_save_doctor_schedule() {
+    $doctor_id = isset($_POST['doctor_id']) ? intval($_POST['doctor_id']) : 0;
+    if (!$doctor_id) {
+        wp_send_json_error(array('message' => 'Bác sĩ không hợp lệ.'));
+    }
+
+    $current_user_id = get_current_user_id();
+    $doctor_user_id = intval(get_post_meta($doctor_id, '_doctor_user_id', true));
+    if ($doctor_user_id !== $current_user_id && !current_user_can('manage_options')) {
+        wp_send_json_error(array('message' => 'Bạn không có quyền thay đổi lịch làm việc của bác sĩ này.'));
+    }
+
+    $weekly_schedule = isset($_POST['weekly_schedule']) ? json_decode(wp_unslash($_POST['weekly_schedule']), true) : null;
+    $days_off = isset($_POST['days_off']) ? json_decode(wp_unslash($_POST['days_off']), true) : null;
+
+    if (!is_array($weekly_schedule)) {
+        wp_send_json_error(array('message' => 'Lịch làm việc tuần không hợp lệ.'));
+    }
+    if (!is_array($days_off)) {
+        wp_send_json_error(array('message' => 'Danh sách ngày nghỉ không hợp lệ.'));
+    }
+
+    // Làm sạch dữ liệu
+    $sanitized_schedule = array();
+    $allowed_days = array('monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday');
+    foreach ($weekly_schedule as $day => $data) {
+        if (!in_array($day, $allowed_days)) continue;
+        $sanitized_schedule[$day] = array(
+            'enabled' => isset($data['enabled']) ? filter_var($data['enabled'], FILTER_VALIDATE_BOOLEAN) : false,
+            'slots'   => isset($data['slots']) && is_array($data['slots']) ? array_map('sanitize_text_field', $data['slots']) : array()
+        );
+    }
+
+    $sanitized_days_off = array();
+    foreach ($days_off as $date) {
+        $date = sanitize_text_field(trim($date));
+        if (!empty($date)) {
+            $sanitized_days_off[] = $date;
+        }
+    }
+
+    update_post_meta($doctor_id, '_weekly_schedule', $sanitized_schedule);
+    update_post_meta($doctor_id, '_days_off', $sanitized_days_off);
+
+    wp_send_json_success(array('message' => 'Lưu lịch làm việc và ngày nghỉ thành công!'));
+}
+
+add_action('wp_ajax_cb_get_doctor_schedule', 'cb_ajax_get_doctor_schedule');
+function cb_ajax_get_doctor_schedule() {
+    $doctor_id = isset($_POST['doctor_id']) ? intval($_POST['doctor_id']) : 0;
+    if (!$doctor_id) {
+        wp_send_json_error(array('message' => 'Bác sĩ không hợp lệ.'));
+    }
+
+    $current_user_id = get_current_user_id();
+    $doctor_user_id = intval(get_post_meta($doctor_id, '_doctor_user_id', true));
+    if ($doctor_user_id !== $current_user_id && !current_user_can('manage_options')) {
+        wp_send_json_error(array('message' => 'Bạn không có quyền truy cập lịch làm việc này.'));
+    }
+
+    $weekly_schedule = get_post_meta($doctor_id, '_weekly_schedule', true);
+    $days_off = get_post_meta($doctor_id, '_days_off', true);
+
+    // Mặc định nếu chưa thiết lập
+    if (empty($weekly_schedule)) {
+        $weekly_schedule = array();
+        $allowed_days = array('monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday');
+        $slots_str = get_option('cb_time_slots', "08:00\n08:30\n09:00\n09:30\n10:00\n10:30\n14:00\n14:30\n15:00\n15:30\n16:00");
+        $all_slots = array_filter(array_map('trim', explode("\n", $slots_str)));
+        
+        foreach ($allowed_days as $day) {
+            $enabled = !in_array($day, array('saturday', 'sunday'));
+            $weekly_schedule[$day] = array(
+                'enabled' => $enabled,
+                'slots'   => $enabled ? array_values($all_slots) : array()
+            );
+        }
+    }
+
+    if (empty($days_off)) {
+        $days_off = array();
+    }
+
+    wp_send_json_success(array(
+        'weekly_schedule' => $weekly_schedule,
+        'days_off'        => $days_off
+    ));
+}
+
+/**
+ * Render interface for Doctor Weekly Schedule & Days Off Manager
+ */
+function cb_render_doctor_schedule_manager_html($doctor_id) {
+    wp_enqueue_style('flatpickr-css', 'https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css');
+    wp_enqueue_script('flatpickr-js', 'https://cdn.jsdelivr.net/npm/flatpickr', array(), null, true);
+    
+    $slots_str = get_option('cb_time_slots', "08:00\n08:30\n09:00\n09:30\n10:00\n10:30\n14:00\n14:30\n15:00\n15:30\n16:00");
+    $all_slots = array_filter(array_map('trim', explode("\n", $slots_str)));
+    
+    $weekly_schedule = get_post_meta($doctor_id, '_weekly_schedule', true);
+    $days_off = get_post_meta($doctor_id, '_days_off', true);
+    
+    $allowed_days = array(
+        'monday'    => 'Thứ Hai',
+        'tuesday'   => 'Thứ Ba',
+        'wednesday' => 'Thứ Tư',
+        'thursday'  => 'Thứ Năm',
+        'friday'    => 'Thứ Sáu',
+        'saturday'  => 'Thứ Bảy',
+        'sunday'    => 'Chủ Nhật'
+    );
+    
+    if (empty($weekly_schedule) || !is_array($weekly_schedule)) {
+        $weekly_schedule = array();
+        foreach (array_keys($allowed_days) as $day) {
+            $enabled = !in_array($day, array('saturday', 'sunday'));
+            $weekly_schedule[$day] = array(
+                'enabled' => $enabled,
+                'slots'   => $enabled ? array_values($all_slots) : array()
+            );
+        }
+    }
+    
+    if (empty($days_off) || !is_array($days_off)) {
+        $days_off = array();
+    }
+    
+    ob_start();
+    ?>
+    <div class="cb-schedule-manager" data-doctor-id="<?php echo esc_attr($doctor_id); ?>">
+        <div style="margin-bottom: 40px; border-bottom: 1px solid #edf2f7; padding-bottom: 20px;">
+            <h3 style="margin: 0 0 10px; color: #1a365d; font-size: 24px; font-weight: 800;">Lịch làm việc hàng tuần</h3>
+            <p style="margin: 0; color: #718096; font-size: 14px;">Bật/tắt ngày làm việc và tick chọn các khung giờ nhận bệnh nhân của bạn.</p>
+        </div>
+        
+        <div class="cb-weekly-grid">
+            <?php foreach ($allowed_days as $day_key => $day_name) : 
+                $day_data = isset($weekly_schedule[$day_key]) ? $weekly_schedule[$day_key] : array('enabled' => false, 'slots' => array());
+                $is_enabled = isset($day_data['enabled']) ? $day_data['enabled'] : false;
+                $active_slots = isset($day_data['slots']) ? $day_data['slots'] : array();
+            ?>
+                <div class="cb-day-card <?php echo $is_enabled ? 'active' : ''; ?>" data-day="<?php echo esc_attr($day_key); ?>">
+                    <div class="cb-day-header">
+                        <span class="cb-day-title"><?php echo esc_html($day_name); ?></span>
+                        <label class="cb-switch">
+                            <input type="checkbox" class="cb-day-toggle" <?php checked($is_enabled); ?>>
+                            <span class="cb-slider"></span>
+                        </label>
+                    </div>
+                    
+                    <div class="cb-day-body">
+                        <div style="font-size: 12px; font-weight: 700; color: #a0aec0; text-transform: uppercase; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
+                            <span>Khung giờ khám</span>
+                            <span class="cb-select-all-slots" style="color: #3182ce; cursor: pointer; text-transform: none;">Chọn tất cả</span>
+                        </div>
+                        <div class="cb-slots-grid">
+                            <?php foreach ($all_slots as $slot) : 
+                                $is_checked = in_array($slot, $active_slots);
+                            ?>
+                                <label class="cb-slot-checkbox-label <?php echo $is_checked ? 'checked' : ''; ?>">
+                                    <input type="checkbox" class="cb-slot-checkbox" value="<?php echo esc_attr($slot); ?>" <?php checked($is_checked); ?> <?php disabled(!$is_enabled); ?>>
+                                    <span><?php echo esc_html($slot); ?></span>
+                                </label>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                </div>
+            <?php endforeach; ?>
+        </div>
+        
+        <div style="margin: 40px 0; border-bottom: 1px solid #edf2f7; padding-bottom: 20px;">
+            <h3 style="margin: 0 0 10px; color: #1a365d; font-size: 24px; font-weight: 800;">Đăng ký ngày nghỉ phép</h3>
+            <p style="margin: 0; color: #718096; font-size: 14px;">Chọn các ngày cụ thể bạn muốn nghỉ khám. Hệ thống sẽ tự động chặn không cho đặt lịch vào các ngày này.</p>
+        </div>
+        
+        <div class="cb-daysoff-container">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px; align-items: start;">
+                <div>
+                    <label style="display: block; font-weight: 700; color: #4a5568; margin-bottom: 10px; font-size: 14px;">Danh sách ngày nghỉ phép:</label>
+                    <div style="position: relative;">
+                        <input type="text" id="cb-days-off-picker" value="<?php echo esc_attr(implode(', ', $days_off)); ?>" placeholder="Chọn các ngày nghỉ của bạn..." class="cb-days-off-input" readonly>
+                        <i class="fas fa-calendar-alt" style="position: absolute; right: 15px; top: 15px; color: #a0aec0; pointer-events: none;"></i>
+                    </div>
+                    <p style="font-size: 13px; color: #718096; margin-top: 10px; line-height: 1.5;"><i class="fas fa-info-circle" style="color: #3182ce; margin-right: 5px;"></i> Bạn có thể chọn nhiều ngày nghỉ cùng một lúc trên lịch.</p>
+                </div>
+                <div class="cb-days-off-badge-list" style="display: flex; gap: 8px; flex-wrap: wrap; padding: 25px; background: #f8fafc; border-radius: 16px; border: 1px solid #edf2f7; min-height: 100px;">
+                    <?php if (empty($days_off)) : ?>
+                        <span class="cb-no-days-off" style="color: #a0aec0; font-size: 14px; font-style: italic; align-self: center; margin: auto;">Chưa có ngày nghỉ nào được chọn.</span>
+                    <?php else : ?>
+                        <?php foreach ($days_off as $date) : ?>
+                            <span class="cb-date-badge" data-date="<?php echo esc_attr($date); ?>">
+                                <?php echo esc_html($date); ?>
+                                <span class="cb-remove-date" style="margin-left: 6px; cursor: pointer; color: #e53e3e; font-weight: 800;">&times;</span>
+                            </span>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
+        
+        <div style="margin-top: 40px; display: flex; justify-content: flex-end; border-top: 1px solid #edf2f7; padding-top: 30px;">
+            <button type="button" id="cb-btn-save-schedule" class="cb-save-btn">
+                <i class="fas fa-save"></i> Lưu cấu hình lịch làm việc
+            </button>
+        </div>
+    </div>
+    
+    <style>
+        .cb-weekly-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; }
+        .cb-day-card { background: #fff; border-radius: 20px; border: 1px solid #edf2f7; box-shadow: 0 4px 15px rgba(0,0,0,0.02); transition: all 0.3s ease; overflow: hidden; }
+        .cb-day-card:hover { transform: translateY(-3px); box-shadow: 0 10px 25px rgba(0,0,0,0.05); }
+        .cb-day-card.active { border-color: #bee3f8; background: #fff; }
+        .cb-day-card:not(.active) { opacity: 0.65; background: #f8fafc; }
+        
+        .cb-day-header { display: flex; justify-content: space-between; align-items: center; padding: 20px; border-bottom: 1px solid #edf2f7; background: #fcfcfc; }
+        .cb-day-card.active .cb-day-header { background: #ebf8ff; border-bottom-color: #bee3f8; }
+        .cb-day-title { font-size: 16px; font-weight: 800; color: #2d3748; }
+        .cb-day-card.active .cb-day-title { color: #2b6cb0; }
+        
+        .cb-day-body { padding: 20px; }
+        .cb-slots-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(75px, 1fr)); gap: 10px; margin-top: 10px; }
+        
+        .cb-slot-checkbox-label { display: flex; align-items: center; justify-content: center; border: 1px solid #cbd5e0; border-radius: 8px; padding: 8px; font-size: 13px; font-weight: 700; color: #4a5568; cursor: pointer; transition: all 0.2s; background: #fff; box-sizing: border-box; }
+        .cb-slot-checkbox-label input { display: none; }
+        .cb-slot-checkbox-label:hover { border-color: #2b6cb0; color: #2b6cb0; background: #ebf8ff; }
+        .cb-slot-checkbox-label.checked { border-color: #3182ce; background: #3182ce; color: #fff; }
+        .cb-day-card:not(.active) .cb-slot-checkbox-label { cursor: not-allowed; background: #edf2f7; border-color: #e2e8f0; color: #a0aec0; }
+        .cb-day-card:not(.active) .cb-slot-checkbox-label:hover { border-color: #e2e8f0; color: #a0aec0; background: #edf2f7; }
+        
+        /* iOS-style toggle switch */
+        .cb-switch { position: relative; display: inline-block; width: 48px; height: 26px; }
+        .cb-switch input { opacity: 0; width: 0; height: 0; }
+        .cb-slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #cbd5e0; transition: .3s; border-radius: 34px; }
+        .cb-slider:before { position: absolute; content: ""; height: 20px; width: 20px; left: 3px; bottom: 3px; background-color: white; transition: .3s; border-radius: 50%; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .cb-switch input:checked + .cb-slider { background-color: #3182ce; }
+        .cb-switch input:checked + .cb-slider:before { transform: translateX(22px); }
+        
+        .cb-days-off-input { width: 100%; border: 1px solid #cbd5e0; border-radius: 12px; padding: 15px; font-family: inherit; font-size: 14px; font-weight: 500; cursor: pointer; background: #fff; box-sizing: border-box; }
+        .cb-days-off-input:focus { outline: none; border-color: #3182ce; box-shadow: 0 0 0 3px rgba(66,153,225,0.15); }
+        
+        .cb-date-badge { display: inline-flex; align-items: center; background: #ebf8ff; color: #2b6cb0; font-weight: 700; font-size: 13px; padding: 6px 14px; border-radius: 50px; border: 1px solid #bee3f8; }
+        
+        .cb-save-btn { background: linear-gradient(135deg, #005086 0%, #2b6cb0 100%); color: #fff; border: none; padding: 15px 30px; border-radius: 12px; font-weight: 700; font-size: 15px; cursor: pointer; transition: all 0.2s; box-shadow: 0 4px 14px rgba(43,108,176,0.3); display: inline-flex; align-items: center; gap: 8px; }
+        .cb-save-btn:hover { transform: translateY(-1px); box-shadow: 0 8px 20px rgba(43,108,176,0.4); opacity: 0.95; }
+        .cb-save-btn:active { transform: translateY(0); }
+        .cb-save-btn:disabled { background: #cbd5e0; color: #a0aec0; cursor: not-allowed; box-shadow: none; }
+        
+        @media (max-width: 768px) {
+            .cb-daysoff-container > div { grid-template-columns: 1fr !important; }
+        }
+    </style>
+    
+    <script>
+        jQuery(document).ready(function($) {
+            var ajaxurl = '<?php echo esc_url( admin_url('admin-ajax.php') ); ?>';
+            var doctorId = <?php echo intval($doctor_id); ?>;
+            
+            // Khởi tạo Flatpickr cho Ngày nghỉ (Multi-date)
+            var scheduleFlatpickrInterval = setInterval(function() {
+                if (typeof flatpickr !== 'undefined') {
+                    clearInterval(scheduleFlatpickrInterval);
+                    flatpickr("#cb-days-off-picker", {
+                        mode: "multiple",
+                        dateFormat: "d/m/Y",
+                        minDate: "today",
+                        disableMobile: "true",
+                        onChange: function(selectedDates, dateStr, instance) {
+                            updateDateBadges(selectedDates);
+                        }
+                    });
+                }
+            }, 100);
+            
+            // Xử lý bật/tắt Thứ trong tuần
+            $(document).on('change', '.cb-day-toggle', function() {
+                var $card = $(this).closest('.cb-day-card');
+                var isChecked = $(this).is(':checked');
+                
+                if (isChecked) {
+                    $card.addClass('active');
+                    $card.find('.cb-slot-checkbox').prop('disabled', false);
+                } else {
+                    $card.removeClass('active');
+                    $card.find('.cb-slot-checkbox').prop('disabled', true);
+                }
+            });
+            
+            // Xử lý tick chọn Khung giờ (Thêm visual class checked)
+            $(document).on('change', '.cb-slot-checkbox', function() {
+                var $label = $(this).closest('.cb-slot-checkbox-label');
+                if ($(this).is(':checked')) {
+                    $label.addClass('checked');
+                } else {
+                    $label.removeClass('checked');
+                }
+            });
+            
+            // Chọn tất cả khung giờ của ngày đó
+            $(document).on('click', '.cb-select-all-slots', function() {
+                var $card = $(this).closest('.cb-day-card');
+                if (!$card.hasClass('active')) return;
+                
+                var allChecked = true;
+                $card.find('.cb-slot-checkbox').each(function() {
+                    if (!$(this).is(':checked')) {
+                        allChecked = false;
+                        return false;
+                    }
+                });
+                
+                $card.find('.cb-slot-checkbox').each(function() {
+                    $(this).prop('checked', !allChecked).trigger('change');
+                });
+            });
+            
+            // Cập nhật danh sách badges ngày nghỉ
+            function updateDateBadges(dates) {
+                var $list = $('.cb-days-off-badge-list');
+                $list.empty();
+                
+                if (dates.length === 0) {
+                    $list.append('<span class="cb-no-days-off" style="color: #a0aec0; font-size: 14px; font-style: italic; align-self: center; margin: auto;">Chưa có ngày nghỉ nào được chọn.</span>');
+                    return;
+                }
+                
+                // Sắp xếp ngày tăng dần
+                dates.sort(function(a, b) { return a - b; });
+                
+                dates.forEach(function(date) {
+                    var day = ('0' + date.getDate()).slice(-2);
+                    var month = ('0' + (date.getMonth() + 1)).slice(-2);
+                    var year = date.getFullYear();
+                    var dateStr = day + '/' + month + '/' + year;
+                    
+                    var badge = $('<span class="cb-date-badge" data-date="' + dateStr + '">' + dateStr + '<span class="cb-remove-date" style="margin-left: 6px; cursor: pointer; color: #e53e3e; font-weight: 800;">&times;</span></span>');
+                    $list.append(badge);
+                });
+            }
+            
+            // Xóa ngày nghỉ bằng badge close click
+            $(document).on('click', '.cb-remove-date', function() {
+                var dateToRemove = $(this).parent().data('date');
+                var picker = document.querySelector("#cb-days-off-picker")._flatpickr;
+                if (!picker) return;
+                
+                var currentDates = picker.selectedDates;
+                var newDates = currentDates.filter(function(date) {
+                    var day = ('0' + date.getDate()).slice(-2);
+                    var month = ('0' + (date.getMonth() + 1)).slice(-2);
+                    var year = date.getFullYear();
+                    var dateStr = day + '/' + month + '/' + year;
+                    return dateStr !== dateToRemove;
+                });
+                
+                picker.setDate(newDates, true);
+            });
+            
+            // AJAX: Lưu Lịch làm việc & Ngày nghỉ
+            $('#cb-btn-save-schedule').on('click', function() {
+                var $btn = $(this);
+                
+                // Thu thập Weekly Schedule
+                var weeklySchedule = {};
+                $('.cb-day-card').each(function() {
+                    var dayKey = $(this).data('day');
+                    var enabled = $(this).find('.cb-day-toggle').is(':checked');
+                    
+                    var slots = [];
+                    if (enabled) {
+                        $(this).find('.cb-slot-checkbox:checked').each(function() {
+                            slots.push($(this).val());
+                        });
+                    }
+                    
+                    weeklySchedule[dayKey] = {
+                        enabled: enabled,
+                        slots: slots
+                    };
+                });
+                
+                // Thu thập Days Off
+                var daysOff = [];
+                var picker = document.querySelector("#cb-days-off-picker")._flatpickr;
+                if (picker && picker.selectedDates) {
+                    picker.selectedDates.forEach(function(date) {
+                        var day = ('0' + date.getDate()).slice(-2);
+                        var month = ('0' + (date.getMonth() + 1)).slice(-2);
+                        var year = date.getFullYear();
+                        daysOff.push(day + '/' + month + '/' + year);
+                    });
+                }
+                
+                $btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Đang lưu...');
+                
+                $.ajax({
+                    url: ajaxurl,
+                    type: 'POST',
+                    data: {
+                        action: 'cb_save_doctor_schedule',
+                        doctor_id: doctorId,
+                        weekly_schedule: JSON.stringify(weeklySchedule),
+                        days_off: JSON.stringify(daysOff)
+                    },
+                    success: function(response) {
+                        if (response.success) {
+                            alert(response.data.message);
+                        } else {
+                            alert('Lỗi: ' + response.data.message);
+                        }
+                        $btn.prop('disabled', false).html('<i class="fas fa-save"></i> Lưu cấu hình lịch làm việc');
+                    },
+                    error: function() {
+                        alert('Đã xảy ra lỗi kết nối.');
+                        $btn.prop('disabled', false).html('<i class="fas fa-save"></i> Lưu cấu hình lịch làm việc');
+                    }
+                });
+            });
+        });
+    </script>
+    <?php
+    return ob_get_clean();
+}
+
+/**
+ * Independent shortcode for Doctor Schedule & Days Off Manager
+ */
+add_shortcode('doctor_schedule_manager', 'cb_doctor_schedule_manager_shortcode');
+function cb_doctor_schedule_manager_shortcode() {
+    if (!is_user_logged_in()) {
+        return '<div class="clinic-history-container"><p style="text-align:center;">Vui lòng <a href="' . home_url('/dang-nhap/') . '" style="color:#005086; font-weight:700;">đăng nhập</a> để quản lý lịch làm việc.</p></div>';
+    }
+
+    $current_user_id = get_current_user_id();
+    $doctor_posts = get_posts(array(
+        'post_type' => 'doctor',
+        'meta_query' => array(
+            array(
+                'key' => '_doctor_user_id',
+                'value' => $current_user_id,
+            )
+        ),
+        'posts_per_page' => 1
+    ));
+
+    if (empty($doctor_posts)) {
+        return '<div style="max-width: 800px; margin: 50px auto; padding: 40px; background: #ebf8ff; border-radius: 20px; border: 2px dashed #63b3ed; text-align: center; font-family: \'Inter\', sans-serif;">
+            <i class="fas fa-user-md" style="font-size: 40px; color: #2b6cb0; margin-bottom: 20px;"></i>
+            <h3 style="color: #2b6cb0; margin-top: 0;">Quản lý Lịch làm việc</h3>
+            <p style="color: #718096;">Tài khoản của bạn chưa được liên kết với hồ sơ Bác sĩ nào trong hệ thống. Vui lòng liên hệ Admin để được hỗ trợ.</p>
+        </div>';
+    }
+
+    $doctor_id = $doctor_posts[0]->ID;
+    
+    return cb_render_doctor_schedule_manager_html($doctor_id);
 }
 ?>
