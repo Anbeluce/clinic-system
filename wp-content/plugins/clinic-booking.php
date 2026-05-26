@@ -72,6 +72,78 @@ function cb_register_custom_post_status() {
 }
 add_action( 'init', 'cb_register_custom_post_status' );
 
+// Đăng ký Custom Post Type 'review' (Đánh giá Bác sĩ)
+function cb_register_review_post_type() {
+    $args = array(
+        'labels' => array(
+            'name'               => 'Đánh giá Bác sĩ',
+            'singular_name'      => 'Đánh giá',
+            'add_new'            => 'Thêm đánh giá mới',
+            'add_new_item'       => 'Thêm đánh giá',
+            'edit_item'          => 'Sửa đánh giá',
+            'new_item'           => 'Đánh giá mới',
+            'view_item'          => 'Xem đánh giá',
+            'search_items'       => 'Tìm kiếm đánh giá',
+            'not_found'          => 'Không tìm thấy đánh giá nào',
+            'all_items'          => 'Tất cả đánh giá',
+            'menu_name'          => 'Đánh giá Bác sĩ'
+        ),
+        'public'             => false, // Không cần hiển thị frontend dưới dạng trang riêng lẻ
+        'show_ui'            => true,  // Nhưng hiển thị UI trong admin
+        'show_in_menu'       => true,
+        'has_archive'        => false,
+        'supports'           => array( 'title', 'editor' ), // Tiêu đề và nội dung nhận xét
+        'menu_icon'          => 'dashicons-star-filled',
+    );
+    register_post_type( 'review', $args );
+}
+add_action( 'init', 'cb_register_review_post_type' );
+
+// Thêm cột trong Admin danh sách review
+add_filter( 'manage_review_posts_columns', 'cb_set_review_posts_columns' );
+function cb_set_review_posts_columns( $columns ) {
+    $new_columns = array(
+        'cb_rating'      => 'Số sao (Rating)',
+        'cb_doctor'      => 'Bác sĩ được đánh giá',
+        'cb_appointment' => 'Lịch khám liên quan',
+    );
+    $title_index = array_search( 'title', array_keys( $columns ) );
+    if ( $title_index !== false ) {
+        $columns = array_slice( $columns, 0, $title_index + 1, true ) + $new_columns + array_slice( $columns, $title_index + 1, null, true );
+    } else {
+        $columns = array_merge( $columns, $new_columns );
+    }
+    return $columns;
+}
+
+// Điền dữ liệu vào các cột tùy chỉnh
+add_action( 'manage_review_posts_custom_column', 'cb_fill_review_posts_columns', 10, 2 );
+function cb_fill_review_posts_columns( $column, $post_id ) {
+    switch ( $column ) {
+        case 'cb_rating':
+            $rating = get_post_meta( $post_id, '_rating', true );
+            $stars = str_repeat( '⭐', intval( $rating ) );
+            echo esc_html( $rating ) . ' ' . $stars;
+            break;
+        case 'cb_doctor':
+            $doctor_id = get_post_meta( $post_id, '_doctor_id', true );
+            if ( $doctor_id ) {
+                echo '<a href="' . esc_url( get_edit_post_link( $doctor_id ) ) . '">' . esc_html( get_the_title( $doctor_id ) ) . '</a>';
+            } else {
+                echo '<span style="color:#a0aec0;">Không rõ</span>';
+            }
+            break;
+        case 'cb_appointment':
+            $app_id = get_post_meta( $post_id, '_appointment_id', true );
+            if ( $app_id ) {
+                echo '<a href="' . esc_url( get_edit_post_link( $app_id ) ) . '">Lịch hẹn #' . esc_html( $app_id ) . '</a>';
+            } else {
+                echo '<span style="color:#a0aec0;">Không rõ</span>';
+            }
+            break;
+    }
+}
+
 // Hàm khởi tạo Custom Post Type cho 'Bác sĩ'
 function create_doctor_post_type() {
     $args = array(
@@ -583,7 +655,13 @@ function clinic_booking_form_shortcode() {
                                 <?php
                                 if ($doctors_list) {
                                     foreach ($doctors_list as $doc) {
-                                        echo '<option value="' . esc_attr($doc->post_title) . '" data-doctor-id="' . esc_attr($doc->ID) . '">' . esc_html($doc->post_title) . '</option>';
+                                        $avg_rating = get_post_meta($doc->ID, '_average_rating', true);
+                                        $review_count = get_post_meta($doc->ID, '_review_count', true);
+                                        $rating_text = '';
+                                        if (!empty($avg_rating) && floatval($avg_rating) > 0) {
+                                            $rating_text = ' (⭐ ' . $avg_rating . ' - ' . $review_count . ' đánh giá)';
+                                        }
+                                        echo '<option value="' . esc_attr($doc->post_title) . '" data-doctor-id="' . esc_attr($doc->ID) . '">' . esc_html($doc->post_title) . esc_html($rating_text) . '</option>';
                                     }
                                 }
                                 ?>
@@ -690,17 +768,69 @@ function clinic_booking_form_shortcode() {
                         if (empty($img_url)) $img_url = get_the_post_thumbnail_url($doctor->ID, 'thumbnail');
                         if (empty($img_url)) $img_url = 'https://ui-avatars.com/api/?name='.urlencode($doctor->post_title).'&background=ebf8ff&color=2b6cb0&size=200';
                         ?>
+                        <?php
+                        $avg_rating = get_post_meta($doctor->ID, '_average_rating', true);
+                        $review_count = get_post_meta($doctor->ID, '_review_count', true);
+                        ?>
                         <div class="doctor-card" style="display: <?php echo $display; ?>;">
                             <img src="<?php echo esc_url($img_url); ?>" alt="<?php echo esc_attr($doctor->post_title); ?>" class="doctor-avatar">
-                            <div class="doctor-info">
-                                <h4><?php echo esc_html($doctor->post_title); ?></h4>
-                                <div class="doctor-excerpt" style="color: #718096; font-size: 14px; line-height: 1.5; margin-bottom: 10px;">
+                            <div class="doctor-info" style="width: 100%;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 5px;">
+                                    <h4 style="margin: 0;"><?php echo esc_html($doctor->post_title); ?></h4>
+                                    <?php if (!empty($avg_rating) && floatval($avg_rating) > 0) : ?>
+                                        <div class="doctor-rating-badge" style="background: #fffaf0; border: 1px solid #fbd38d; color: #dd6b20; font-size: 13px; font-weight: 700; padding: 4px 10px; border-radius: 50px; display: inline-flex; align-items: center; gap: 4px;">
+                                            <i class="fas fa-star" style="color: #ecc94b;"></i> <?php echo esc_html($avg_rating); ?>/5 (<?php echo esc_html($review_count); ?> đánh giá)
+                                        </div>
+                                    <?php endif; ?>
+                                </div>
+                                <div class="doctor-excerpt" style="color: #718096; font-size: 14px; line-height: 1.5; margin: 10px 0;">
                                     <?php 
                                         $excerpt = get_the_excerpt($doctor->ID);
                                         echo wp_kses_post($excerpt ? $excerpt : wp_trim_words($doctor->post_content, 20)); 
                                     ?>
                                 </div>
-                                <a href="<?php echo get_permalink($doctor->ID); ?>" target="_blank" style="color: #2b6cb0; font-size: 13px; font-weight: 600; text-decoration: none;">Xem chi tiết →</a>
+
+                                <!-- Bổ sung 3 đánh giá mới nhất của Bác sĩ -->
+                                <?php
+                                $reviews_query = new WP_Query(array(
+                                    'post_type'      => 'review',
+                                    'post_status'    => 'publish',
+                                    'posts_per_page' => 3,
+                                    'meta_query'     => array(
+                                        array(
+                                            'key'   => '_doctor_id',
+                                            'value' => $doctor->ID,
+                                        )
+                                    ),
+                                    'orderby'        => 'date',
+                                    'order'          => 'DESC'
+                                ));
+                                if ($reviews_query->have_posts()) :
+                                ?>
+                                    <div class="doctor-mini-reviews" style="background: #f7fafc; padding: 15px; border-radius: 12px; border: 1px solid #edf2f7; margin-top: 15px; margin-bottom: 15px;">
+                                        <div style="font-size: 12px; font-weight: 800; color: #4a5568; text-transform: uppercase; margin-bottom: 10px; display: flex; align-items: center; gap: 5px;">
+                                            <i class="fas fa-comment-medical" style="color: #dd6b20;"></i> Nhận xét từ bệnh nhân
+                                        </div>
+                                        <div style="display: flex; flex-direction: column; gap: 10px;">
+                                            <?php while ($reviews_query->have_posts()) : $reviews_query->the_post(); 
+                                                $rev_id = get_the_ID();
+                                                $rev_rating = get_post_meta($rev_id, '_rating', true);
+                                                $rev_patient = get_post_meta($rev_id, '_patient_name', true);
+                                                $rev_content = get_the_content();
+                                            ?>
+                                                <div style="font-size: 13px; line-height: 1.4; border-bottom: 1px dashed #edf2f7; padding-bottom: 8px; margin-bottom: 2px;">
+                                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                                                        <strong style="color: #2b6cb0;"><?php echo esc_html($rev_patient); ?></strong>
+                                                        <span style="color: #ecc94b; font-size: 11px;"><?php echo str_repeat('★', intval($rev_rating)); ?></span>
+                                                    </div>
+                                                    <span style="color: #4a5568; font-style: italic;">"<?php echo esc_html(wp_trim_words($rev_content, 18)); ?>"</span>
+                                                </div>
+                                            <?php endwhile; wp_reset_postdata(); ?>
+                                        </div>
+                                    </div>
+                                <?php endif; ?>
+
+                                <a href="<?php echo get_permalink($doctor->ID); ?>" target="_blank" style="color: #2b6cb0; font-size: 13px; font-weight: 600; text-decoration: none;">Xem chi tiết profile Bác sĩ →</a>
                             </div>
                         </div>
                         <?php
@@ -2870,9 +3000,22 @@ function clinic_booking_history_shortcode() {
                                                 <i class="fas fa-trash-alt"></i> Hủy
                                             </button>
                                         <?php else : ?>
-                                            <span style="color: #a0aec0; font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; gap: 4px;" title="<?php echo esc_attr($modify_error); ?>">
-                                                <i class="fas fa-lock"></i> Khóa
-                                            </span>
+                                            <?php if ($status === 'completed') : ?>
+                                                <?php $has_review = get_post_meta($post_id, '_has_review', true); ?>
+                                                <?php if (!$has_review) : ?>
+                                                    <button class="cb-patient-btn cb-patient-review-btn" data-id="<?php echo $post_id; ?>" data-doctor="<?php echo esc_attr($doctor); ?>" style="background: #dd6b20; color: #fff; border: none; padding: 6px 12px; border-radius: 6px; font-weight: 700; font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; transition: all 0.2s;">
+                                                        <i class="fas fa-star"></i> Viết đánh giá
+                                                    </button>
+                                                <?php else : ?>
+                                                    <span style="color: #38a169; font-size: 13px; font-weight: 700; display: inline-flex; align-items: center; gap: 4px;" title="Cảm ơn bạn đã đóng góp đánh giá!">
+                                                        <i class="fas fa-check-circle"></i> Đã đánh giá
+                                                    </span>
+                                                <?php endif; ?>
+                                            <?php else : ?>
+                                                <span style="color: #a0aec0; font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; gap: 4px;" title="<?php echo esc_attr($modify_error); ?>">
+                                                    <i class="fas fa-lock"></i> Khóa
+                                                </span>
+                                            <?php endif; ?>
                                         <?php endif; ?>
                                     </div>
                                 </td>
@@ -2918,6 +3061,38 @@ function clinic_booking_history_shortcode() {
                     </div>
                 </div>
             </div>
+
+            <!-- Modal: Viết đánh giá -->
+            <div id="cb-modal-review" class="cb-modal">
+                <div class="cb-modal-content" style="max-width: 450px;">
+                    <div class="cb-modal-header">
+                        <h3>Đánh giá Bác sĩ</h3>
+                        <span class="cb-modal-close" data-modal="cb-modal-review">&times;</span>
+                    </div>
+                    <div class="cb-modal-body" style="text-align: center;">
+                        <p style="margin-bottom: 5px; font-size: 15px; font-weight: 500;">Bạn đánh giá chất lượng dịch vụ của <strong id="cb-review-doctor-name" style="color: #005086;">Bác sĩ</strong> như thế nào?</p>
+                        
+                        <!-- Interactive Star Selector -->
+                        <div class="cb-stars-selector">
+                            <span class="cb-star" data-value="1"><i class="far fa-star"></i></span>
+                            <span class="cb-star" data-value="2"><i class="far fa-star"></i></span>
+                            <span class="cb-star" data-value="3"><i class="far fa-star"></i></span>
+                            <span class="cb-star" data-value="4"><i class="far fa-star"></i></span>
+                            <span class="cb-star" data-value="5"><i class="far fa-star"></i></span>
+                        </div>
+                        <input type="hidden" id="cb-review-rating-value" value="0">
+                        <input type="hidden" id="cb-review-app-id" value="">
+                        
+                        <div style="text-align: left; margin-top: 20px;">
+                            <label style="display: block; font-weight: 700; margin-bottom: 8px; color: #1a365d;">Ý kiến nhận xét của bạn:</label>
+                            <textarea id="cb-review-text" placeholder="Hãy chia sẻ trải nghiệm khám bệnh của bạn tại phòng khám..." rows="4" style="width: 100%; border: 1px solid #cbd5e0; border-radius: 12px; padding: 12px; font-family: inherit; font-size: 14px; resize: vertical; box-sizing: border-box;"></textarea>
+                        </div>
+                    </div>
+                    <div class="cb-modal-footer">
+                        <button class="cb-action-btn" id="cb-confirm-submit-review" style="background: #dd6b20; width: 100%;">Gửi đánh giá ngay</button>
+                    </div>
+                </div>
+            </div>
         <?php else : ?>
             <div style="text-align: center; padding: 40px; background: #f8fafc; border-radius: 12px; border: 1px dashed #cbd5e0;">
                 <p style="color: #718096; margin-bottom: 0;">Bạn chưa có lịch hẹn nào được ghi nhận.</p>
@@ -2951,6 +3126,11 @@ function clinic_booking_history_shortcode() {
         .cb-action-btn { border: none; padding: 10px 20px; border-radius: 8px; font-weight: 700; font-size: 14px; cursor: pointer; transition: all 0.2s; color: #fff; }
         .cb-action-btn:hover { opacity: 0.9; transform: translateY(-1px); }
         .cb-action-btn:active { transform: translateY(0); }
+        
+        /* Stars Selector CSS */
+        .cb-stars-selector { display: flex; gap: 12px; font-size: 36px; cursor: pointer; justify-content: center; margin: 20px 0; }
+        .cb-star { color: #cbd5e0; transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+        .cb-star:hover, .cb-star.hover, .cb-star.selected { color: #ecc94b; transform: scale(1.2); filter: drop-shadow(0 0 5px rgba(236,201,75,0.5)); }
         
         @keyframes cbSlideDown {
             from { opacity: 0; transform: translateY(-50px); }
@@ -3076,6 +3256,92 @@ function clinic_booking_history_shortcode() {
                     error: function() {
                         alert('Đã xảy ra lỗi kết nối.');
                         $btn.prop('disabled', false).html(originalHtml);
+                    }
+                });
+            });
+
+            // Mở modal Đánh giá
+            $(document).on('click', '.cb-patient-review-btn', function() {
+                var appId = $(this).data('id');
+                var docName = $(this).data('doctor');
+                
+                $('#cb-review-app-id').val(appId);
+                $('#cb-review-doctor-name').text(docName);
+                $('#cb-review-rating-value').val(0);
+                $('#cb-review-text').val('');
+                
+                $('.cb-stars-selector .cb-star').removeClass('selected hover');
+                $('.cb-stars-selector .cb-star i').removeClass('fas fa-star').addClass('far fa-star');
+                
+                $('#cb-modal-review').css('display', 'flex');
+                $('body').css('overflow', 'hidden');
+            });
+
+            // Hover sao
+            $('.cb-stars-selector .cb-star').on('mouseenter', function() {
+                var val = $(this).data('value');
+                $('.cb-stars-selector .cb-star').each(function() {
+                    if ($(this).data('value') <= val) {
+                        $(this).addClass('hover');
+                    } else {
+                        $(this).removeClass('hover');
+                    }
+                });
+            }).on('mouseleave', function() {
+                $('.cb-stars-selector .cb-star').removeClass('hover');
+            });
+
+            // Click chọn sao
+            $('.cb-stars-selector .cb-star').on('click', function() {
+                var val = $(this).data('value');
+                $('#cb-review-rating-value').val(val);
+                
+                $('.cb-stars-selector .cb-star').each(function() {
+                    if ($(this).data('value') <= val) {
+                        $(this).addClass('selected');
+                        $(this).find('i').removeClass('far fa-star').addClass('fas fa-star');
+                    } else {
+                        $(this).removeClass('selected');
+                        $(this).find('i').removeClass('fas fa-star').addClass('far fa-star');
+                    }
+                });
+            });
+
+            // AJAX Gửi Đánh giá
+            $('#cb-confirm-submit-review').on('click', function() {
+                var $btn = $(this);
+                var appId = $('#cb-review-app-id').val();
+                var rating = $('#cb-review-rating-value').val();
+                var content = $('#cb-review-text').val().trim();
+                
+                if (rating < 1 || rating > 5) {
+                    alert('Vui lòng chọn số sao đánh giá (từ 1 đến 5 sao).');
+                    return;
+                }
+                
+                $btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Đang gửi đánh giá...');
+                
+                $.ajax({
+                    url: ajaxurl,
+                    type: 'POST',
+                    data: {
+                        action: 'cb_submit_doctor_review',
+                        appointment_id: appId,
+                        rating: rating,
+                        review_content: content
+                    },
+                    success: function(response) {
+                        if (response.success) {
+                            alert(response.data.message);
+                            location.reload();
+                        } else {
+                            alert('Lỗi: ' + response.data.message);
+                            $btn.prop('disabled', false).text('Gửi đánh giá ngay');
+                        }
+                    },
+                    error: function() {
+                        alert('Đã xảy ra lỗi kết nối.');
+                        $btn.prop('disabled', false).text('Gửi đánh giá ngay');
                     }
                 });
             });
@@ -5102,6 +5368,129 @@ function cb_ajax_get_available_slots() {
         'is_working'  => true,
         'available'   => $available_slots,
         'unavailable' => $unavailable_slots
+    ));
+}
+
+/**
+ * =========================================================================
+ * PHASE 5 - DOCTOR REVIEWS & RATINGS SYSTEM
+ * =========================================================================
+ */
+
+/**
+ * Helper: Tính toán lại điểm số đánh giá trung bình và tổng số lượt đánh giá của Bác sĩ
+ */
+function cb_update_doctor_rating_cache($doctor_id) {
+    global $wpdb;
+    
+    // Lấy tất cả các review của bác sĩ này
+    $reviews = $wpdb->get_results($wpdb->prepare("
+        SELECT pm.post_id, pm2.meta_value as rating 
+        FROM {$wpdb->postmeta} pm
+        INNER JOIN {$wpdb->postmeta} pm2 ON pm.post_id = pm2.post_id AND pm2.meta_key = '_rating'
+        INNER JOIN {$wpdb->posts} p ON pm.post_id = p.ID
+        WHERE pm.meta_key = '_doctor_id' 
+          AND pm.meta_value = %d
+          AND p.post_status = 'publish'
+    ", $doctor_id));
+    
+    $total_rating = 0;
+    $count = count($reviews);
+    
+    if ($count > 0) {
+        foreach ($reviews as $rev) {
+            $total_rating += floatval($rev->rating);
+        }
+        $avg_rating = round($total_rating / $count, 1);
+    } else {
+        $avg_rating = 0;
+    }
+    
+    update_post_meta($doctor_id, '_average_rating', $avg_rating);
+    update_post_meta($doctor_id, '_review_count', $count);
+}
+
+/**
+ * AJAX: Gửi đánh giá cho Bác sĩ từ Bệnh nhân
+ */
+add_action('wp_ajax_cb_submit_doctor_review', 'cb_ajax_submit_doctor_review');
+function cb_ajax_submit_doctor_review() {
+    $appointment_id = isset($_POST['appointment_id']) ? intval($_POST['appointment_id']) : 0;
+    $rating         = isset($_POST['rating']) ? intval($_POST['rating']) : 0;
+    $content        = isset($_POST['review_content']) ? sanitize_textarea_field($_POST['review_content']) : '';
+
+    if (!$appointment_id || $rating < 1 || $rating > 5) {
+        wp_send_json_error(array('message' => 'Dữ liệu đánh giá không hợp lệ.'));
+    }
+
+    if (!is_user_logged_in()) {
+        wp_send_json_error(array('message' => 'Bạn cần đăng nhập để gửi đánh giá.'));
+    }
+
+    $current_user_id = get_current_user_id();
+    $appointment = get_post($appointment_id);
+
+    if (!$appointment || $appointment->post_type !== 'appointment') {
+        wp_send_json_error(array('message' => 'Lịch hẹn không tồn tại.'));
+    }
+
+    // Kiểm tra quyền sở hữu cuộc hẹn (ngoại trừ admin)
+    if (!current_user_can('administrator') && intval($appointment->post_author) !== $current_user_id) {
+        wp_send_json_error(array('message' => 'Bạn không có quyền đánh giá lịch hẹn này.'));
+    }
+
+    // Phải là completed
+    if ($appointment->post_status !== 'completed') {
+        wp_send_json_error(array('message' => 'Chỉ có thể đánh giá ca khám đã hoàn thành.'));
+    }
+
+    // Kiểm tra xem đã đánh giá chưa
+    $already_reviewed = get_post_meta($appointment_id, '_has_review', true);
+    if ($already_reviewed) {
+        wp_send_json_error(array('message' => 'Lịch khám này đã được bạn đánh giá trước đó.'));
+    }
+
+    $doctor_id = get_post_meta($appointment_id, '_doctor_id', true);
+    if (!$doctor_id) {
+        wp_send_json_error(array('message' => 'Không tìm thấy thông tin bác sĩ liên kết.'));
+    }
+
+    $patient_name = get_post_meta($appointment_id, '_patient_name', true);
+    if (empty($patient_name)) {
+        $patient_name = 'Bệnh nhân ẩn danh';
+    }
+
+    // Tạo bài viết review mới
+    $review_data = array(
+        'post_title'   => 'Đánh giá cho ' . get_the_title($doctor_id) . ' - Lịch #' . $appointment_id,
+        'post_content' => $content,
+        'post_status'  => 'publish',
+        'post_type'    => 'review',
+        'post_author'  => $current_user_id,
+    );
+
+    $review_id = wp_insert_post($review_data);
+
+    if (is_wp_error($review_id) || !$review_id) {
+        wp_send_json_error(array('message' => 'Không thể lưu đánh giá của bạn lúc này.'));
+    }
+
+    // Lưu các postmeta liên quan
+    update_post_meta($review_id, '_doctor_id', $doctor_id);
+    update_post_meta($review_id, '_rating', $rating);
+    update_post_meta($review_id, '_appointment_id', $appointment_id);
+    update_post_meta($review_id, '_patient_name', $patient_name);
+
+    // Đánh dấu cuộc hẹn đã có review
+    update_post_meta($appointment_id, '_has_review', '1');
+    update_post_meta($appointment_id, '_review_id', $review_id);
+
+    // Tính toán lại xếp hạng bác sĩ
+    cb_update_doctor_rating_cache($doctor_id);
+
+    wp_send_json_success(array(
+        'message' => 'Gửi đánh giá thành công! Cảm ơn ý kiến đóng góp của bạn.',
+        'rating'  => $rating
     ));
 }
 ?>
