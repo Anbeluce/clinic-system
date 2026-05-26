@@ -3565,7 +3565,7 @@ function clinic_booking_history_shortcode() {
                     </div>
                     <div class="cb-modal-footer">
                         <button class="cb-action-btn cb-btn-complete" id="cb-confirm-reschedule" style="background: #3182ce;">Xác nhận Đổi lịch</button>
-                        <button class="cb-action-btn cb-btn-view-notes" style="background: #edf2f7; color: #4a5568;" data-close="cb-modal-reschedule">Hủy</button>
+                        <button class="cb-action-btn cb-btn-muted" style="background: #edf2f7; color: #4a5568;" data-close="cb-modal-reschedule">Hủy</button>
                     </div>
                 </div>
             </div>
@@ -4423,8 +4423,8 @@ function doctor_dashboard_shortcode() {
         .cb-btn-reject:hover { background: #c53030; transform: translateY(-1px); }
         .cb-btn-complete { background: #3182ce; color: #fff; }
         .cb-btn-complete:hover { background: #2b6cb0; transform: translateY(-1px); }
-        .cb-btn-view-notes { background: #4a5568; color: #fff; }
-        .cb-btn-view-notes:hover { background: #2d3748; transform: translateY(-1px); }
+        .cb-btn-view-notes, .cb-btn-muted { background: #4a5568; color: #fff; }
+        .cb-btn-view-notes:hover, .cb-btn-muted:hover { background: #2d3748; transform: translateY(-1px); }
         .cb-btn-view-reason { background: #dd6b20; color: #fff; }
         .cb-btn-view-reason:hover { background: #c05621; transform: translateY(-1px); }
 
@@ -4638,7 +4638,7 @@ function doctor_dashboard_shortcode() {
             </div>
             <div class="cb-modal-footer">
                 <button class="cb-action-btn cb-btn-reject" id="cb-confirm-reject">Xác nhận Từ chối</button>
-                <button class="cb-action-btn cb-btn-view-notes" style="background: #edf2f7; color: #4a5568;" data-close="cb-modal-reject">Hủy</button>
+                <button class="cb-action-btn cb-btn-muted" style="background: #edf2f7; color: #4a5568;" data-close="cb-modal-reject">Hủy</button>
             </div>
         </div>
     </div>
@@ -4657,7 +4657,7 @@ function doctor_dashboard_shortcode() {
             </div>
             <div class="cb-modal-footer">
                 <button class="cb-action-btn cb-btn-complete" id="cb-confirm-complete">Đã khám xong</button>
-                <button class="cb-action-btn cb-btn-view-notes" style="background: #edf2f7; color: #4a5568;" data-close="cb-modal-complete">Hủy</button>
+                <button class="cb-action-btn cb-btn-muted" style="background: #edf2f7; color: #4a5568;" data-close="cb-modal-complete">Hủy</button>
             </div>
         </div>
     </div>
@@ -4673,7 +4673,7 @@ function doctor_dashboard_shortcode() {
                 <div id="view-notes-content" style="background: #f7fafc; border: 1px solid #edf2f7; padding: 15px; border-radius: 8px; font-style: italic; white-space: pre-wrap; min-height: 100px;"></div>
             </div>
             <div class="cb-modal-footer">
-                <button class="cb-action-btn cb-btn-view-notes" data-close="cb-modal-view-notes">Đóng</button>
+                <button class="cb-action-btn cb-btn-muted" data-close="cb-modal-view-notes">Đóng</button>
             </div>
         </div>
     </div>
@@ -4689,7 +4689,7 @@ function doctor_dashboard_shortcode() {
                 <div id="view-reason-content" style="background: #fff5f5; border: 1px solid #feb2b2; color: #c53030; padding: 15px; border-radius: 8px; font-style: italic; white-space: pre-wrap; min-height: 80px;"></div>
             </div>
             <div class="cb-modal-footer">
-                <button class="cb-action-btn cb-btn-view-notes" data-close="cb-modal-view-reason">Đóng</button>
+                <button class="cb-action-btn cb-btn-muted" data-close="cb-modal-view-reason">Đóng</button>
             </div>
         </div>
     </div> <!-- Đóng thẻ div modal-view-reason thiếu -->
