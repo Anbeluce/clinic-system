@@ -1385,11 +1385,33 @@ function doctor_account_link_meta_box_html( $post ) {
 
 function doctor_meta_box_html( $post ) {
     $doctor_image_url = get_post_meta( $post->ID, '_doctor_image_url', true );
+    $doctor_price = get_post_meta( $post->ID, '_doctor_price', true );
+    $doctor_title_custom = get_post_meta( $post->ID, '_doctor_title_custom', true );
+    
     wp_nonce_field( 'doctor_save_meta', 'doctor_meta_nonce' );
-    echo '<div style="display: flex; flex-direction: column; gap: 10px;">';
-    echo '<label for="doctor_image_url"><strong>Link ảnh đại diện (URL trực tiếp):</strong></label>';
-    echo '<input type="url" id="doctor_image_url" name="doctor_image_url" placeholder="Ví dụ: https://i.imgur.com/anh-bac-si.jpg" value="' . esc_attr( $doctor_image_url ) . '" style="width: 100%;">';
-    echo '<p style="color: #666; font-size: 13px;">Dán trực tiếp link ảnh vào đây để không phải upload lên thư viện ảnh nặng máy.</p>';
+    echo '<div style="display: flex; flex-direction: column; gap: 15px; padding: 10px 0;">';
+    
+    // Ảnh đại diện
+    echo '<div>';
+    echo '<label for="doctor_image_url" style="display:block; margin-bottom: 5px; font-weight: bold;">Link ảnh đại diện (URL trực tiếp):</label>';
+    echo '<input type="url" id="doctor_image_url" name="doctor_image_url" placeholder="Ví dụ: https://i.imgur.com/anh-bac-si.jpg" value="' . esc_attr( $doctor_image_url ) . '" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid #ccc; box-sizing: border-box;">';
+    echo '<p class="description" style="margin: 4px 0 0 0;">Dán trực tiếp link ảnh vào đây để không phải upload lên thư viện ảnh nặng máy.</p>';
+    echo '</div>';
+
+    // Giá khám bệnh
+    echo '<div>';
+    echo '<label for="doctor_price" style="display:block; margin-bottom: 5px; font-weight: bold;">Giá khám bệnh:</label>';
+    echo '<input type="text" id="doctor_price" name="doctor_price" placeholder="Ví dụ: 200.000đ" value="' . esc_attr( $doctor_price ) . '" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid #ccc; box-sizing: border-box;">';
+    echo '<p class="description" style="margin: 4px 0 0 0;">Nhập giá khám để hiển thị ở trang chủ (mặc định: 200.000đ).</p>';
+    echo '</div>';
+
+    // Chức danh bác sĩ
+    echo '<div>';
+    echo '<label for="doctor_title_custom" style="display:block; margin-bottom: 5px; font-weight: bold;">Chức danh bác sĩ:</label>';
+    echo '<input type="text" id="doctor_title_custom" name="doctor_title_custom" placeholder="Ví dụ: Bác sĩ Chuyên Khoa" value="' . esc_attr( $doctor_title_custom ) . '" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid #ccc; box-sizing: border-box;">';
+    echo '<p class="description" style="margin: 4px 0 0 0;">Nhập chức danh hiển thị ở dưới cùng của card (mặc định: Bác sĩ Chuyên Khoa).</p>';
+    echo '</div>';
+    
     echo '</div>';
 }
 
@@ -1490,6 +1512,16 @@ function doctor_save_meta_box_data( $post_id ) {
     // Lưu link ảnh
     if ( isset( $_POST['doctor_image_url'] ) ) {
         update_post_meta( $post_id, '_doctor_image_url', sanitize_url( $_POST['doctor_image_url'] ) );
+    }
+
+    // Lưu Giá khám bệnh
+    if ( isset( $_POST['doctor_price'] ) ) {
+        update_post_meta( $post_id, '_doctor_price', sanitize_text_field( $_POST['doctor_price'] ) );
+    }
+
+    // Lưu Chức danh bác sĩ
+    if ( isset( $_POST['doctor_title_custom'] ) ) {
+        update_post_meta( $post_id, '_doctor_title_custom', sanitize_text_field( $_POST['doctor_title_custom'] ) );
     }
 
     // Lưu ID tài khoản liên kết
@@ -5500,101 +5532,310 @@ function cb_ajax_submit_doctor_review() {
  */
 add_shortcode('clinic_doctors_list', 'cb_clinic_doctors_list_shortcode');
 function cb_clinic_doctors_list_shortcode() {
+    global $wpdb;
+    
     $doctors = get_posts(array(
         'post_type'   => 'doctor',
         'numberposts' => -1,
         'post_status' => 'publish',
-        'orderby'     => 'meta_value_num',
-        'meta_key'    => '_average_rating',
-        'order'       => 'DESC' // Sắp xếp bác sĩ có số sao cao nhất lên đầu!
     ));
-
-    // Fallback nếu chưa có bác sĩ nào được đánh giá (meta _average_rating trống)
-    if (empty($doctors)) {
-        $doctors = get_posts(array(
-            'post_type'   => 'doctor',
-            'numberposts' => -1,
-            'post_status' => 'publish',
-            'orderby'     => 'title',
-            'order'       => 'ASC'
-        ));
-    }
 
     if (empty($doctors)) {
         return '<div style="text-align: center; padding: 40px; color: #718096; font-family: \'Inter\', sans-serif;">Chưa có dữ liệu bác sĩ.</div>';
     }
 
-    $booking_page_url = cb_get_shortcode_page_permalink('clinic_booking_form');
+    // Sắp xếp bác sĩ dựa trên số sao trung bình thực tế hoặc ảo uy tín
+    usort($doctors, function($a, $b) {
+        $r_a = get_post_meta($a->ID, '_average_rating', true);
+        if (empty($r_a)) {
+            $mod_a = $a->ID % 3;
+            $r_a = ($mod_a == 0) ? 5.0 : (($mod_a == 1) ? 4.9 : 4.8);
+        } else {
+            $r_a = floatval($r_a);
+        }
+        
+        $r_b = get_post_meta($b->ID, '_average_rating', true);
+        if (empty($r_b)) {
+            $mod_b = $b->ID % 3;
+            $r_b = ($mod_b == 0) ? 5.0 : (($mod_b == 1) ? 4.9 : 4.8);
+        } else {
+            $r_b = floatval($r_b);
+        }
+        
+        if ($r_a == $r_b) {
+            return $b->ID - $a->ID;
+        }
+        return ($r_b < $r_a) ? -1 : 1;
+    });
 
     ob_start();
     ?>
-    <div class="cb-doctors-grid">
-        <?php foreach ($doctors as $doc) : 
-            $img_url = get_post_meta($doc->ID, '_doctor_image_url', true);
-            if (empty($img_url)) $img_url = get_the_post_thumbnail_url($doc->ID, 'medium');
-            if (empty($img_url)) $img_url = 'https://ui-avatars.com/api/?name='.urlencode($doc->post_title).'&background=ebf8ff&color=2b6cb0&size=200';
-            
-            $specialty = '';
-            $terms = wp_get_post_terms($doc->ID, 'specialty');
-            if (!is_wp_error($terms) && !empty($terms)) {
-                $specialty = $terms[0]->name;
-            } else {
-                $specialty = 'Bác sĩ chuyên khoa';
-            }
+    <div class="cb-doctors-home-section">
+        <h2 class="cb-doctors-title-home">Bác sĩ tư vấn khám bệnh qua video</h2>
+        <div class="cb-doctors-grid">
+            <?php foreach ($doctors as $doc) : 
+                // Link ảnh đại diện
+                $img_url = get_post_meta($doc->ID, '_doctor_image_url', true);
+                if (empty($img_url)) $img_url = get_the_post_thumbnail_url($doc->ID, 'medium');
+                if (empty($img_url)) $img_url = 'https://ui-avatars.com/api/?name='.urlencode($doc->post_title).'&background=ebf8ff&color=2b6cb0&size=200';
+                
+                // Tách chuyên khoa
+                $specialty = '';
+                $terms = wp_get_post_terms($doc->ID, 'specialty');
+                if (!is_wp_error($terms) && !empty($terms)) {
+                    $specialty = $terms[0]->name;
+                } else {
+                    $specialty = 'Bác sĩ chuyên khoa';
+                }
 
-            $avg_rating = get_post_meta($doc->ID, '_average_rating', true);
-            $review_count = get_post_meta($doc->ID, '_review_count', true);
-            
-            $excerpt = get_the_excerpt($doc->ID);
-            $summary = $excerpt ? $excerpt : wp_trim_words($doc->post_content, 22);
-        ?>
-            <div class="cb-doctor-card-showcase">
-                <img src="<?php echo esc_url($img_url); ?>" alt="<?php echo esc_attr($doc->post_title); ?>" class="cb-doc-avatar">
-                <h3 class="cb-doc-name"><?php echo esc_html($doc->post_title); ?></h3>
-                <span class="cb-doc-specialty"><?php echo esc_html($specialty); ?></span>
+                // Tính số sao trung bình thực tế hoặc ảo uy tín
+                $avg_rating = get_post_meta($doc->ID, '_average_rating', true);
+                if (empty($avg_rating) || floatval($avg_rating) <= 0) {
+                    $mod = $doc->ID % 3;
+                    $avg_rating = ($mod == 0) ? '5.0' : (($mod == 1) ? '4.9' : '4.8');
+                } else {
+                    $avg_rating = number_format(floatval($avg_rating), 1);
+                }
+
+                // Tính lượt khám (completed + fake offset)
+                $completed_count = $wpdb->get_var($wpdb->prepare("
+                    SELECT COUNT(*) FROM {$wpdb->posts} p
+                    INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id
+                    WHERE p.post_type = 'appointment'
+                      AND p.post_status = 'completed'
+                      AND pm.meta_key = '_doctor_id'
+                      AND pm.meta_value = %d
+                ", $doc->ID));
                 
-                <div class="cb-doc-stars">
-                    <?php if (!empty($avg_rating) && floatval($avg_rating) > 0) : 
-                        $stars_full = floor($avg_rating);
-                        $has_half = ($avg_rating - $stars_full) >= 0.5;
-                    ?>
-                        <span style="color: #ecc94b;">
-                            <?php 
-                                echo str_repeat('★', $stars_full);
-                                if ($has_half) echo '½';
-                                echo str_repeat('☆', 5 - $stars_full - ($has_half ? 1 : 0));
-                            ?>
-                        </span>
-                        <span><?php echo esc_html($avg_rating); ?>/5 (<?php echo esc_html($review_count); ?> đánh giá)</span>
-                    <?php else : ?>
-                        <span style="color: #cbd5e0;">☆☆☆☆☆</span>
-                        <span style="color: #a0aec0; font-size: 13px; font-weight: 500;">Chưa có đánh giá</span>
-                    <?php endif; ?>
+                $fake_offset = 35 + ($doc->ID % 145);
+                $total_visits = intval($completed_count) + $fake_offset;
+
+                // Giá khám & Chức danh
+                $price = get_post_meta($doc->ID, '_doctor_price', true);
+                if (empty($price)) {
+                    $price = '200.000đ';
+                }
+                
+                $title_custom = get_post_meta($doc->ID, '_doctor_title_custom', true);
+                if (empty($title_custom)) {
+                    $title_custom = 'Bác sĩ Chuyên Khoa';
+                }
+
+                // Tách Tiền tố & Tên riêng
+                $title = $doc->post_title;
+                $prefix = '';
+                $name = $title;
+                $prefixes = array('BS CKII.', 'BS CKI.', 'BS CkII.', 'BS CkI.', 'BS.', 'ThS. BS.', 'Bác sĩ', 'ThS.BS.', 'TS.BS.', 'PGS.TS.BS.', 'GS.TS.BS.');
+                foreach ($prefixes as $p) {
+                    if (mb_stripos($title, $p) === 0) {
+                        $prefix = $p;
+                        $name = trim(mb_substr($title, mb_strlen($p)));
+                        break;
+                    }
+                }
+                if (empty($prefix)) {
+                    if (preg_match('/^(BS|Bác sĩ)\b/i', $title, $matches)) {
+                        $prefix = $matches[0];
+                        $name = trim(substr($title, strlen($prefix)));
+                    }
+                }
+            ?>
+                <div class="cb-doctor-card-showcase">
+                    <!-- 1. Ảnh đại diện bo tròn -->
+                    <div class="cb-doc-avatar-container">
+                        <img src="<?php echo esc_url($img_url); ?>" alt="<?php echo esc_attr($doc->post_title); ?>" class="cb-doc-avatar">
+                    </div>
+
+                    <!-- 2. Thanh trạng thái Đánh giá & Lượt khám -->
+                    <div class="cb-doc-status-bar">
+                        <div class="cb-status-left">
+                            <span class="cb-label">Đánh giá:</span> <span class="cb-val"><?php echo esc_html($avg_rating); ?></span> <i class="fa-solid fa-star cb-star-icon"></i>
+                        </div>
+                        <div class="cb-status-right">
+                            <span class="cb-label">Lượt khám:</span> <span class="cb-val"><?php echo esc_html($total_visits); ?></span> <i class="fa-solid fa-user cb-user-icon"></i>
+                        </div>
+                    </div>
+
+                    <!-- 3. Chức vụ & Họ tên -->
+                    <div class="cb-doc-name-section">
+                        <div class="cb-doc-prefix"><?php echo esc_html($prefix ? $prefix : 'Bác sĩ'); ?></div>
+                        <h4 class="cb-doc-name"><?php echo esc_html($name); ?></h4>
+                    </div>
+
+                    <!-- 4. Chi tiết Chuyên khoa, Giá khám, Chức vụ cụ thể -->
+                    <div class="cb-doc-details-list">
+                        <div class="cb-doc-detail-item">
+                            <i class="fa-solid fa-stethoscope"></i>
+                            <span class="cb-detail-txt"><?php echo esc_html($specialty); ?></span>
+                        </div>
+                        <div class="cb-doc-detail-item">
+                            <i class="fa-solid fa-circle-info"></i>
+                            <span class="cb-detail-txt"><?php echo esc_html($price); ?></span>
+                        </div>
+                        <div class="cb-doc-detail-item">
+                            <i class="fa-solid fa-hospital"></i>
+                            <span class="cb-detail-txt"><?php echo esc_html($title_custom); ?></span>
+                        </div>
+                    </div>
                 </div>
-                
-                <p class="cb-doc-excerpt">"<?php echo esc_html($summary); ?>"</p>
-                
-                <a href="<?php echo ($booking_page_url !== '#') ? esc_url($booking_page_url . '?auto_doctor=' . $doc->ID) : '#'; ?>" class="cb-doc-btn" <?php if ($booking_page_url === '#') : ?>onclick="alert('Chưa cấu hình trang Đặt lịch. Vui lòng tạo một trang mới trong WordPress Admin và chèn shortcode [clinic_booking_form] vào trang đó.'); return false;"<?php endif; ?>>
-                    <i class="fas fa-calendar-alt"></i> Đặt lịch khám
-                </a>
-            </div>
-        <?php endforeach; ?>
+            <?php endforeach; ?>
+        </div>
     </div>
 
     <style>
-        .cb-doctors-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 35px; max-width: 1200px; margin: 40px auto; font-family: 'Inter', sans-serif; }
-        .cb-doctor-card-showcase { background: #fff; border-radius: 24px; border: 1px solid #edf2f7; box-shadow: 0 10px 30px rgba(0,0,0,0.03); padding: 35px; text-align: center; transition: all 0.3s cubic-bezier(0.165, 0.84, 0.44, 1); display: flex; flex-direction: column; align-items: center; box-sizing: border-box; }
-        .cb-doctor-card-showcase:hover { transform: translateY(-8px); box-shadow: 0 20px 40px rgba(43,108,176,0.08); border-color: #bee3f8; }
-        .cb-doc-avatar { width: 130px; height: 130px; border-radius: 50%; object-fit: cover; margin-bottom: 22px; border: 4px solid #ebf8ff; box-shadow: 0 8px 25px rgba(43,108,176,0.12); }
-        .cb-doc-name { font-size: 22px; font-weight: 800; color: #1a365d; margin: 0 0 8px 0; }
-        .cb-doc-specialty { font-size: 13px; font-weight: 700; color: #2b6cb0; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 15px; background: #ebf8ff; padding: 6px 16px; border-radius: 50px; display: inline-block; }
-        .cb-doc-stars { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 14px; color: #dd6b20; font-weight: 700; margin-bottom: 18px; }
-        .cb-doc-excerpt { font-size: 14px; color: #718096; line-height: 1.6; margin-bottom: 30px; flex-grow: 1; font-style: italic; }
-        .cb-doc-btn { background: linear-gradient(135deg, #005086 0%, #2b6cb0 100%); color: #fff !important; text-decoration: none !important; font-weight: 700; font-size: 15px; padding: 14px 30px; border-radius: 14px; transition: all 0.2s; box-shadow: 0 8px 20px rgba(43,108,176,0.2); width: 85%; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
-        .cb-doc-btn:hover { transform: translateY(-2px); box-shadow: 0 12px 25px rgba(43,108,176,0.3); }
-        
-        @media (max-width: 768px) {
-            .cb-doctors-grid { grid-template-columns: 1fr; padding: 0 20px; }
+        .cb-doctors-home-section {
+            width: 100%;
+            max-width: 1200px;
+            margin: 40px auto;
+            font-family: 'Inter', sans-serif;
+            box-sizing: border-box;
+            padding: 0 15px;
+        }
+        .cb-doctors-title-home {
+            text-align: center;
+            font-size: 28px;
+            font-weight: 800;
+            color: #0f2d59;
+            margin-bottom: 35px;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            line-height: 1.3;
+        }
+        .cb-doctors-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 24px;
+            width: 100%;
+        }
+        .cb-doctor-card-showcase {
+            background: #ffffff;
+            border-radius: 16px;
+            border: 1px solid #edf2f7;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.04);
+            padding: 24px 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            transition: all 0.3s cubic-bezier(0.165, 0.84, 0.44, 1);
+            box-sizing: border-box;
+        }
+        .cb-doctor-card-showcase:hover {
+            transform: translateY(-6px);
+            box-shadow: 0 15px 35px rgba(15, 45, 89, 0.08);
+            border-color: #cbd5e1;
+        }
+        .cb-doc-avatar-container {
+            width: 125px;
+            height: 125px;
+            border-radius: 50%;
+            overflow: hidden;
+            margin-bottom: 18px;
+            border: 4px solid #f0f7ff;
+            box-shadow: 0 6px 15px rgba(0, 0, 0, 0.06);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: #f8fafc;
+        }
+        .cb-doc-avatar {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .cb-doc-status-bar {
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+            padding: 10px 12px;
+            background: #f1f5f9;
+            border-radius: 8px;
+            font-size: 13px;
+            margin-bottom: 18px;
+            box-sizing: border-box;
+        }
+        .cb-status-left, .cb-status-right {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .cb-status-left .cb-label, .cb-status-right .cb-label {
+            color: #64748b;
+            font-weight: 500;
+        }
+        .cb-status-left .cb-val, .cb-status-right .cb-val {
+            color: #1e293b;
+            font-weight: 700;
+        }
+        .cb-star-icon {
+            color: #ecc94b;
+            font-size: 14px;
+        }
+        .cb-user-icon {
+            color: #f97316;
+            font-size: 13px;
+        }
+        .cb-doc-name-section {
+            width: 100%;
+            text-align: left;
+            margin-bottom: 15px;
+            padding-left: 4px;
+        }
+        .cb-doc-prefix {
+            font-size: 13px;
+            color: #64748b;
+            font-weight: 600;
+            margin-bottom: 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .cb-doc-name {
+            font-size: 19px;
+            font-weight: 800;
+            color: #0f2d59;
+            margin: 0;
+            line-height: 1.3;
+        }
+        .cb-doc-details-list {
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            border-top: 1px dashed #e2e8f0;
+            padding-top: 15px;
+            box-sizing: border-box;
+        }
+        .cb-doc-detail-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 14px;
+            color: #334155;
+        }
+        .cb-doc-detail-item i {
+            color: #64748b;
+            font-size: 15px;
+            width: 18px;
+            text-align: center;
+        }
+        .cb-detail-txt {
+            font-weight: 500;
+            line-height: 1.4;
+        }
+
+        @media (max-width: 1024px) {
+            .cb-doctors-grid {
+                grid-template-columns: repeat(2, 1fr);
+                gap: 20px;
+            }
+        }
+        @media (max-width: 640px) {
+            .cb-doctors-grid {
+                grid-template-columns: 1fr;
+            }
+            .cb-doctors-title-home {
+                font-size: 22px;
+                margin-bottom: 25px;
+            }
         }
     </style>
     <?php
