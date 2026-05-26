@@ -1605,21 +1605,255 @@ function doctor_save_meta_box_data( $post_id ) {
 // ==========================================
 add_action('admin_menu', 'cb_register_settings_menu');
 function cb_register_settings_menu() {
-    add_options_page(
-        'Cấu hình Đặt Lịch', 
-        'Cấu hình Đặt Lịch', 
+    // 1. Tạo menu chính "Hệ Thống Đặt Lịch"
+    add_menu_page(
+        'Hệ Thống Đặt Lịch', 
+        'Hệ Thống Đặt Lịch', 
         'manage_options', 
-        'clinic-booking-settings', 
-        'cb_settings_page_html'
+        'clinic-booking-dashboard', 
+        'cb_admin_dashboard_page_html',
+        'dashicons-heart', // Biểu tượng hình trái tim y tế
+        25
     );
+
+    // 2. Submenu: Bảng điều khiển (Trùng slug để hiển thị đầu tiên)
     add_submenu_page(
-        'edit.php?post_type=doctor',
+        'clinic-booking-dashboard',
+        'Bảng Điều Khiển',
+        'Bảng Điều Khiển',
+        'manage_options',
+        'clinic-booking-dashboard',
+        'cb_admin_dashboard_page_html'
+    );
+
+    // 3. Submenu: Nhập nhanh Bác sĩ
+    add_submenu_page(
+        'clinic-booking-dashboard',
         'Nhập nhanh Bác sĩ',
-        'Nhập nhanh',
+        'Nhập nhanh Bác sĩ',
         'manage_options',
         'cb-bulk-add-doctors',
         'cb_bulk_add_doctors_page'
     );
+
+    // 4. Submenu: Cấu hình Đặt Lịch
+    add_submenu_page(
+        'clinic-booking-dashboard',
+        'Cấu hình Đặt Lịch',
+        'Cấu hình Đặt Lịch',
+        'manage_options',
+        'clinic-booking-settings',
+        'cb_settings_page_html'
+    );
+}
+
+// =======================================================
+// TRANG DASHBOARD TỔNG QUAN HỆ THỐNG CHO ADMIN
+// =======================================================
+function cb_admin_dashboard_page_html() {
+    if (!current_user_can('manage_options')) return;
+
+    // Tính toán số liệu thống kê thực tế
+    $count_doctors = wp_count_posts('doctor')->publish;
+
+    $appointments_count = wp_count_posts('appointment');
+    $count_total_appointments = intval($appointments_count->publish) + intval($appointments_count->pending) + intval($appointments_count->confirmed ?? 0);
+    $count_pending_appointments = intval($appointments_count->pending);
+
+    $count_reviews = wp_count_posts('review')->publish;
+
+    // Lấy 5 cuộc hẹn mới nhất
+    $recent_appointments = get_posts(array(
+        'post_type' => 'appointment',
+        'posts_per_page' => 5,
+        'post_status' => array('publish', 'pending'),
+        'orderby' => 'date',
+        'order' => 'DESC'
+    ));
+
+    // Lấy danh sách chi nhánh
+    $branches = get_terms(array(
+        'taxonomy' => 'clinic_branch',
+        'hide_empty' => false,
+    ));
+    ?>
+    <div class="wrap cb-admin-wrap" style="max-width: 1200px; margin: 30px auto; font-family: 'Inter', sans-serif;">
+        
+        <!-- Header -->
+        <div class="cb-admin-header" style="display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #edf2f7; padding-bottom: 20px; margin-bottom: 30px;">
+            <div style="display: flex; align-items: center; gap: 15px;">
+                <div style="background: #eef9ff; color: #3CA5DD; font-size: 32px; width: 60px; height: 60px; border-radius: 12px; display: flex; align-items: center; justify-content: center;">
+                    🏥
+                </div>
+                <div>
+                    <h1 style="font-size: 26px; font-weight: 800; color: #1e293b; margin: 0; padding: 0; line-height: 1.2;">Bảng Điều Khiển Hệ Thống</h1>
+                    <p style="color: #64748b; margin: 4px 0 0 0; font-size: 14px;">Tổng quan số liệu, quản lý lịch khám và đội ngũ bác sĩ phòng khám</p>
+                </div>
+            </div>
+            <div style="display: flex; gap: 10px;">
+                <a href="<?php echo admin_url('post-new.php?post_type=appointment'); ?>" class="button button-primary" style="background: #3CA5DD; border-color: #3CA5DD; color: #fff; border-radius: 8px; padding: 10px 20px; font-size: 14px; font-weight: 700; height: auto; box-shadow: 0 4px 14px rgba(60, 165, 221, 0.3); text-shadow: none;">➕ Tạo Lịch Khám</a>
+            </div>
+        </div>
+
+        <!-- Stats Grid -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; margin-bottom: 30px;">
+            
+            <!-- Card 1: Doctors -->
+            <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 4px 20px rgba(0,0,0,0.02);">
+                <div>
+                    <span style="color: #64748b; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">Tổng Bác Sĩ</span>
+                    <h2 style="font-size: 32px; font-weight: 800; color: #0f172a; margin: 8px 0 0 0;"><?php echo esc_html($count_doctors); ?></h2>
+                </div>
+                <div style="background: #eff6ff; color: #2563eb; width: 50px; height: 50px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 24px;">
+                    👨‍⚕️
+                </div>
+            </div>
+
+            <!-- Card 2: Total Appointments -->
+            <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 4px 20px rgba(0,0,0,0.02);">
+                <div>
+                    <span style="color: #64748b; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">Tổng Lịch Hẹn</span>
+                    <h2 style="font-size: 32px; font-weight: 800; color: #0f172a; margin: 8px 0 0 0;"><?php echo esc_html($count_total_appointments); ?></h2>
+                </div>
+                <div style="background: #f0fdf4; color: #16a34a; width: 50px; height: 50px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 24px;">
+                    📅
+                </div>
+            </div>
+
+            <!-- Card 3: Pending Appointments -->
+            <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 4px 20px rgba(0,0,0,0.02);">
+                <div>
+                    <span style="color: #64748b; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">Đang Chờ Duyệt</span>
+                    <h2 style="font-size: 32px; font-weight: 800; color: #dd6b20; margin: 8px 0 0 0;"><?php echo esc_html($count_pending_appointments); ?></h2>
+                </div>
+                <div style="background: #fff7ed; color: #dd6b20; width: 50px; height: 50px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 24px;">
+                    ⏳
+                </div>
+            </div>
+
+            <!-- Card 4: Reviews -->
+            <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 4px 20px rgba(0,0,0,0.02);">
+                <div>
+                    <span style="color: #64748b; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">Đánh Giá</span>
+                    <h2 style="font-size: 32px; font-weight: 800; color: #eab308; margin: 8px 0 0 0;"><?php echo esc_html($count_reviews); ?></h2>
+                </div>
+                <div style="background: #fef9c3; color: #eab308; width: 50px; height: 50px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 24px;">
+                    ⭐
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Main Grid (Left table, Right stats) -->
+        <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 30px; align-items: start;">
+            
+            <!-- Left Side: Recent Bookings -->
+            <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 25px; box-shadow: 0 4px 20px rgba(0,0,0,0.02);">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px;">
+                    <h3 style="margin: 0; font-size: 17px; font-weight: 700; color: #0f172a;">Lịch Khám Mới Đăng Ký</h3>
+                    <a href="<?php echo admin_url('edit.php?post_type=appointment'); ?>" style="color: #3CA5DD; font-size: 13px; font-weight: 600; text-decoration: none;">Xem tất cả →</a>
+                </div>
+
+                <div style="overflow-x: auto;">
+                    <table style="width: 100%; border-collapse: collapse; text-align: left;">
+                        <thead>
+                            <tr style="border-bottom: 2px solid #edf2f7;">
+                                <th style="padding: 12px 8px; font-size: 12px; font-weight: 700; color: #475569; text-transform: uppercase;">Bệnh nhân</th>
+                                <th style="padding: 12px 8px; font-size: 12px; font-weight: 700; color: #475569; text-transform: uppercase;">Điện thoại</th>
+                                <th style="padding: 12px 8px; font-size: 12px; font-weight: 700; color: #475569; text-transform: uppercase;">Bác sĩ</th>
+                                <th style="padding: 12px 8px; font-size: 12px; font-weight: 700; color: #475569; text-transform: uppercase;">Thời gian</th>
+                                <th style="padding: 12px 8px; font-size: 12px; font-weight: 700; color: #475569; text-transform: uppercase;">Trạng thái</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php
+                            if ($recent_appointments) {
+                                foreach ($recent_appointments as $app) {
+                                    $p_name = get_post_meta($app->ID, '_patient_name', true);
+                                    $p_phone = get_post_meta($app->ID, '_patient_phone', true);
+                                    $doc_name = get_post_meta($app->ID, '_selected_doctor', true);
+                                    $booking_date = get_post_meta($app->ID, '_booking_date', true);
+                                    $booking_time = get_post_meta($app->ID, '_booking_time', true);
+                                    $status = $app->post_status;
+                                    
+                                    // Status styling
+                                    $status_bg = '#fef3c7';
+                                    $status_color = '#d97706';
+                                    $status_lbl = 'Chờ duyệt';
+                                    if ($status === 'publish' || $status === 'confirmed') {
+                                        $status_bg = '#dcfce7';
+                                        $status_color = '#16a34a';
+                                        $status_lbl = 'Đã duyệt';
+                                    }
+                                    ?>
+                                    <tr style="border-bottom: 1px solid #edf2f7; transition: background 0.2s;">
+                                        <td style="padding: 14px 8px; font-size: 14px; font-weight: 700; color: #1e293b;"><?php echo esc_html($p_name); ?></td>
+                                        <td style="padding: 14px 8px; font-size: 14px; color: #475569;"><?php echo esc_html($p_phone); ?></td>
+                                        <td style="padding: 14px 8px; font-size: 14px; color: #475569; font-weight: 600;"><?php echo esc_html($doc_name); ?></td>
+                                        <td style="padding: 14px 8px; font-size: 13px; color: #64748b;"><?php echo esc_html($booking_date . ' ' . $booking_time); ?></td>
+                                        <td style="padding: 14px 8px;">
+                                            <span style="background: <?php echo $status_bg; ?>; color: <?php echo $status_color; ?>; padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: 800; text-transform: uppercase;">
+                                                <?php echo esc_html($status_lbl); ?>
+                                            </span>
+                                        </td>
+                                    </tr>
+                                    <?php
+                                }
+                            } else {
+                                echo '<tr><td colspan="5" style="text-align: center; padding: 30px; color: #94a3b8; font-size: 14px;">Chưa có lịch đăng ký nào mới.</td></tr>';
+                            }
+                            ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Right Side: Quick Links & Breakdown -->
+            <div style="display: flex; flex-direction: column; gap: 30px;">
+                
+                <!-- Quick Actions Card -->
+                <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 25px; box-shadow: 0 4px 20px rgba(0,0,0,0.02);">
+                    <h3 style="margin: 0 0 15px 0; font-size: 16px; font-weight: 700; color: #0f172a;">Thao Tác Nhanh</h3>
+                    <div style="display: flex; flex-direction: column; gap: 10px;">
+                        <a href="<?php echo admin_url('post-new.php?post_type=doctor'); ?>" style="display: flex; align-items: center; gap: 10px; background: #f8fafc; border: 1px solid #e2e8f0; padding: 12px 15px; border-radius: 8px; color: #475569; font-weight: 600; text-decoration: none; transition: all 0.2s;" onmouseover="this.style.background='#eff6ff'; this.style.borderColor='#bfdbfe';" onmouseout="this.style.background='#f8fafc'; this.style.borderColor='#e2e8f0';">
+                            <span>👨‍⚕️</span> Thêm mới Bác sĩ
+                        </a>
+                        <a href="<?php echo admin_url('admin.php?page=cb-bulk-add-doctors'); ?>" style="display: flex; align-items: center; gap: 10px; background: #f8fafc; border: 1px solid #e2e8f0; padding: 12px 15px; border-radius: 8px; color: #475569; font-weight: 600; text-decoration: none; transition: all 0.2s;" onmouseover="this.style.background='#eff6ff'; this.style.borderColor='#bfdbfe';" onmouseout="this.style.background='#f8fafc'; this.style.borderColor='#e2e8f0';">
+                            <span>⚡</span> Nhập nhanh Bác sĩ hàng loạt
+                        </a>
+                        <a href="<?php echo admin_url('admin.php?page=clinic-booking-settings'); ?>" style="display: flex; align-items: center; gap: 10px; background: #f8fafc; border: 1px solid #e2e8f0; padding: 12px 15px; border-radius: 8px; color: #475569; font-weight: 600; text-decoration: none; transition: all 0.2s;" onmouseover="this.style.background='#eff6ff'; this.style.borderColor='#bfdbfe';" onmouseout="this.style.background='#f8fafc'; this.style.borderColor='#e2e8f0';">
+                            <span>⚙️</span> Cài đặt cấu hình hệ thống
+                        </a>
+                    </div>
+                </div>
+
+                <!-- Specialties/Branches Breakdown Card -->
+                <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 25px; box-shadow: 0 4px 20px rgba(0,0,0,0.02);">
+                    <h3 style="margin: 0 0 15px 0; font-size: 16px; font-weight: 700; color: #0f172a;">Chi Nhánh Hoạt Động</h3>
+                    <div style="display: flex; flex-direction: column; gap: 12px;">
+                        <?php
+                        if ($branches && !is_wp_error($branches)) {
+                            foreach ($branches as $br) {
+                                ?>
+                                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 14px; border-bottom: 1px dashed #edf2f7; padding-bottom: 8px;">
+                                    <span style="color: #475569; font-weight: 500;"><?php echo esc_html($br->name); ?></span>
+                                    <span style="background: #eef9ff; color: #3CA5DD; font-weight: 700; font-size: 12px; padding: 3px 8px; border-radius: 50px;"><?php echo esc_html($br->count); ?> bác sĩ</span>
+                                </div>
+                                <?php
+                            }
+                        } else {
+                            echo '<span style="color: #94a3b8; font-size: 13px;">Chưa có chi nhánh nào.</span>';
+                        }
+                        ?>
+                    </div>
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+    <?php
 }
 
 add_action('admin_init', 'cb_register_settings');
