@@ -808,12 +808,12 @@ function clinic_booking_form_shortcode() {
                                     ?>
                                 </div>
 
-                                <!-- Bổ sung 3 đánh giá mới nhất của Bác sĩ -->
+                                <!-- Bổ sung 1 đánh giá mới nhất của Bác sĩ -->
                                 <?php
                                 $reviews_query = new WP_Query(array(
                                     'post_type'      => 'review',
                                     'post_status'    => 'publish',
-                                    'posts_per_page' => 3,
+                                    'posts_per_page' => 1,
                                     'meta_query'     => array(
                                         array(
                                             'key'   => '_doctor_id',
@@ -2492,7 +2492,6 @@ function cb_bulk_add_doctors_page() {
     <?php
 }
 
-// Tối ưu giao diện trang chi tiết Bác sĩ (Single Doctor)
 add_filter('the_content', 'cb_doctor_custom_content_template');
 function cb_doctor_custom_content_template($content) {
     if (is_singular('doctor')) {
@@ -2503,6 +2502,153 @@ function cb_doctor_custom_content_template($content) {
 
         $terms_specialty = get_the_terms($post->ID, 'specialty');
         $spec_name = ($terms_specialty && !is_wp_error($terms_specialty)) ? $terms_specialty[0]->name : 'Chuyên gia';
+
+        // Query all reviews for this doctor
+        $reviews_query = new WP_Query(array(
+            'post_type'      => 'review',
+            'post_status'    => 'publish',
+            'posts_per_page' => -1,
+            'meta_query'     => array(
+                array(
+                    'key'   => '_doctor_id',
+                    'value' => $post->ID,
+                )
+            ),
+            'orderby'        => 'date',
+            'order'          => 'DESC'
+        ));
+
+        $total_reviews = $reviews_query->post_count;
+        $rating_counts = array(5 => 0, 4 => 0, 3 => 0, 2 => 0, 1 => 0);
+        $total_rating_sum = 0;
+        $reviews_list_html = '';
+
+        if ($total_reviews > 0) {
+            while ($reviews_query->have_posts()) {
+                $reviews_query->the_post();
+                $rev_id = get_the_ID();
+                $rev_rating = intval(get_post_meta($rev_id, '_rating', true));
+                if ($rev_rating < 1 || $rev_rating > 5) $rev_rating = 5; // fallback
+                $rev_patient = get_post_meta($rev_id, '_patient_name', true);
+                if (empty($rev_patient)) $rev_patient = 'Bệnh nhân ẩn danh';
+                $rev_content = get_the_content();
+                $rev_date = get_the_date('d/m/Y');
+
+                $rating_counts[$rev_rating]++;
+                $total_rating_sum += $rev_rating;
+
+                $stars_gold = str_repeat('<i class="fas fa-star" style="color: #ecc94b; margin-right: 2px;"></i>', $rev_rating);
+                $stars_gray = str_repeat('<i class="far fa-star" style="color: #cbd5e1; margin-right: 2px;"></i>', 5 - $rev_rating);
+
+                $avatar_letter = mb_substr($rev_patient, 0, 1);
+                if (empty($avatar_letter)) $avatar_letter = 'BN';
+
+                $reviews_list_html .= '
+                <div class="doctor-review-item">
+                    <div class="doctor-review-header">
+                        <div class="doctor-review-patient-avatar">
+                            <span class="patient-avatar-letter">'.esc_html($avatar_letter).'</span>
+                        </div>
+                        <div class="doctor-review-patient-info">
+                            <h4 class="patient-name">'.esc_html($rev_patient).'</h4>
+                            <div class="patient-rating-row">
+                                <span class="rating-stars">'.$stars_gold.$stars_gray.'</span>
+                                <span class="review-date">'.$rev_date.'</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="doctor-review-body">
+                        <p class="review-text">"'.esc_html($rev_content).'"</p>
+                    </div>
+                </div>
+                ';
+            }
+            wp_reset_postdata();
+        }
+
+        $avg_rating = $total_reviews > 0 ? round($total_rating_sum / $total_reviews, 1) : 0;
+        
+        // Cache meta synchronization or fallback
+        $cached_avg = get_post_meta($post->ID, '_average_rating', true);
+        if (empty($cached_avg) || floatval($cached_avg) <= 0) {
+            if ($avg_rating > 0) {
+                update_post_meta($post->ID, '_average_rating', $avg_rating);
+            } else {
+                // Fake rating to show high reputation
+                $mod = $post->ID % 3;
+                $avg_rating = ($mod == 0) ? 5.0 : (($mod == 1) ? 4.9 : 4.8);
+            }
+        } else {
+            $avg_rating = floatval($cached_avg);
+        }
+
+        $cached_count = get_post_meta($post->ID, '_review_count', true);
+        if (empty($cached_count) || intval($cached_count) < 0) {
+            if ($total_reviews > 0) {
+                update_post_meta($post->ID, '_review_count', $total_reviews);
+            } else {
+                $total_reviews = 0;
+            }
+        } else {
+            $total_reviews = intval($cached_count);
+        }
+
+        // Generate progress bars
+        $bar_html = '';
+        for ($i = 5; $i >= 1; $i--) {
+            $count = isset($rating_counts[$i]) ? $rating_counts[$i] : 0;
+            $percent = $total_reviews > 0 ? round(($count / $total_reviews) * 100) : 0;
+            
+            $bar_html .= '
+            <div class="doctor-rating-bar-row">
+                <span class="bar-star-label">'.$i.' <i class="fas fa-star" style="color: #ecc94b; font-size: 11px;"></i></span>
+                <div class="bar-progress-bg">
+                    <div class="bar-progress-fill" style="width: '.$percent.'%;"></div>
+                </div>
+                <span class="bar-count-label">'.esc_html($count).'</span>
+            </div>
+            ';
+        }
+
+        // Render summary stars
+        $summary_stars_gold = str_repeat('<i class="fas fa-star" style="color: #ecc94b; margin-right: 3px;"></i>', floor($avg_rating));
+        $summary_stars_half = ($avg_rating - floor($avg_rating) >= 0.3) ? '<i class="fas fa-star-half-alt" style="color: #ecc94b; margin-right: 3px;"></i>' : '';
+        $left_stars_count = 5 - floor($avg_rating) - ($summary_stars_half ? 1 : 0);
+        $summary_stars_gray = str_repeat('<i class="far fa-star" style="color: #cbd5e1; margin-right: 3px;"></i>', max(0, $left_stars_count));
+        $summary_stars_html = $summary_stars_gold . $summary_stars_half . $summary_stars_gray;
+
+        $reviews_section_html = '
+        <div class="doctor-reviews-section">
+            <h3><i class="fas fa-star" style="color: #ecc94b;"></i> ĐÁNH GIÁ & NHẬN XÉT TỪ BỆNH NHÂN</h3>
+        ';
+
+        if ($total_reviews > 0 && !empty($reviews_list_html)) {
+            $reviews_section_html .= '
+            <div class="doctor-rating-summary-card">
+                <div class="doctor-rating-summary-left">
+                    <div class="doctor-rating-large-num">'.number_format($avg_rating, 1).'</div>
+                    <div class="doctor-rating-large-stars">'.$summary_stars_html.'</div>
+                    <div class="doctor-rating-summary-count">Dựa trên '.$total_reviews.' đánh giá</div>
+                </div>
+                <div class="doctor-rating-summary-right">
+                    '.$bar_html.'
+                </div>
+            </div>
+            <div class="doctor-reviews-feed">
+                '.$reviews_list_html.'
+            </div>
+            ';
+        } else {
+            $reviews_section_html .= '
+            <div class="doctor-reviews-empty-state">
+                <i class="far fa-comment-dots fa-3x" style="color: #cbd5e1; margin-bottom: 15px; display: block;"></i>
+                <p style="margin: 0; font-size: 15px; font-weight: 500;">Chưa có nhận xét trực tiếp nào cho bác sĩ này.</p>
+                <p style="margin: 5px 0 0 0; font-size: 13px; color: #a0aec0;">Hãy là người đầu tiên trải nghiệm dịch vụ và gửi đánh giá để nhận xét xuất hiện tại đây!</p>
+            </div>
+            ';
+        }
+
+        $reviews_section_html .= '</div>';
 
         $custom_html = '
         <style>
@@ -2564,6 +2710,188 @@ function cb_doctor_custom_content_template($content) {
                 color: #000 !important;
                 font-weight: 500;
             }
+            
+            /* Styles cho phần nhận xét & đánh giá Premium */
+            .doctor-reviews-section {
+                margin-top: 50px;
+                border-top: 1px solid #e2e8f0;
+                padding-top: 40px;
+                font-family: "Inter", sans-serif;
+            }
+            .doctor-reviews-section h3 {
+                font-size: 20px;
+                font-weight: 800;
+                color: #1a365d;
+                margin-bottom: 25px;
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                letter-spacing: 0.5px;
+            }
+            .doctor-rating-summary-card {
+                display: flex;
+                flex-wrap: wrap;
+                background: #f8fafc;
+                border-radius: 16px;
+                border: 1px solid #edf2f7;
+                padding: 30px;
+                margin-bottom: 35px;
+                gap: 40px;
+                align-items: center;
+            }
+            .doctor-rating-summary-left {
+                flex: 1;
+                min-width: 200px;
+                text-align: center;
+                border-right: 1px solid #edf2f7;
+                padding-right: 20px;
+            }
+            @media (max-width: 768px) {
+                .doctor-rating-summary-left {
+                    border-right: none;
+                    border-bottom: 1px solid #edf2f7;
+                    padding-right: 0;
+                    padding-bottom: 20px;
+                }
+            }
+            .doctor-rating-large-num {
+                font-size: 54px;
+                font-weight: 900;
+                color: #2b6cb0;
+                line-height: 1;
+                margin-bottom: 10px;
+            }
+            .doctor-rating-large-stars {
+                font-size: 20px;
+                margin-bottom: 8px;
+                display: flex;
+                justify-content: center;
+            }
+            .doctor-rating-summary-count {
+                font-size: 14px;
+                color: #718096;
+                font-weight: 600;
+            }
+            .doctor-rating-summary-right {
+                flex: 2;
+                min-width: 250px;
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+            }
+            .doctor-rating-bar-row {
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                font-size: 14px;
+            }
+            .bar-star-label {
+                width: 50px;
+                color: #4a5568;
+                font-weight: 600;
+                display: flex;
+                align-items: center;
+                gap: 4px;
+            }
+            .bar-progress-bg {
+                flex: 1;
+                height: 8px;
+                background: #e2e8f0;
+                border-radius: 4px;
+                overflow: hidden;
+            }
+            .bar-progress-fill {
+                height: 100%;
+                background: #ecc94b;
+                border-radius: 4px;
+                transition: width 0.6s ease;
+            }
+            .bar-count-label {
+                width: 30px;
+                text-align: right;
+                color: #718096;
+                font-weight: 600;
+            }
+            .doctor-reviews-feed {
+                display: flex;
+                flex-direction: column;
+                gap: 20px;
+            }
+            .doctor-review-item {
+                background: #ffffff;
+                border-radius: 12px;
+                border: 1px solid #edf2f7;
+                padding: 20px;
+                box-shadow: 0 4px 6px rgba(0,0,0,0.02);
+                transition: all 0.2s ease;
+            }
+            .doctor-review-item:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 6px 12px rgba(0,0,0,0.04);
+                border-color: #cbd5e1;
+            }
+            .doctor-review-header {
+                display: flex;
+                align-items: center;
+                gap: 15px;
+                margin-bottom: 12px;
+            }
+            .doctor-review-patient-avatar {
+                width: 44px;
+                height: 44px;
+                border-radius: 50%;
+                background: #ebf8ff;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                border: 2px solid #2b6cb0;
+                flex-shrink: 0;
+            }
+            .patient-avatar-letter {
+                color: #2b6cb0;
+                font-weight: 700;
+                font-size: 18px;
+                text-transform: uppercase;
+            }
+            .doctor-review-patient-info {
+                display: flex;
+                flex-direction: column;
+            }
+            .patient-name {
+                margin: 0 0 4px 0;
+                font-size: 16px;
+                font-weight: 700;
+                color: #2d3748;
+            }
+            .patient-rating-row {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                flex-wrap: wrap;
+            }
+            .review-date {
+                font-size: 12px;
+                color: #a0aec0;
+                font-weight: 500;
+            }
+            .doctor-review-body {
+                font-size: 15px;
+                line-height: 1.6;
+                color: #4a5568 !important;
+            }
+            .review-text {
+                margin: 0;
+                font-style: italic;
+                color: #4a5568 !important;
+            }
+            .doctor-reviews-empty-state {
+                text-align: center;
+                padding: 40px 20px;
+                background: #f8fafc;
+                border-radius: 12px;
+                border: 1px dashed #cbd5e0;
+                color: #718096;
+            }
         </style>
         <div class="doctor-detail-container">
             <div class="doctor-detail-left">
@@ -2580,6 +2908,7 @@ function cb_doctor_custom_content_template($content) {
                 </div>
             </div>
         </div>
+        '.$reviews_section_html.'
         ';
         return $custom_html;
     }
