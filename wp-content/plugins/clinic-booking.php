@@ -707,13 +707,17 @@ function clinic_booking_form_shortcode() {
 
     <script>
         document.addEventListener('DOMContentLoaded', function() {
+            // Khởi tạo Flatpickr cho biểu mẫu đặt lịch
             var flatpickrInterval = setInterval(function() {
                 if (typeof flatpickr !== 'undefined') {
                     clearInterval(flatpickrInterval);
                     flatpickr("#booking_date", {
                         dateFormat: "d/m/Y",
                         minDate: "today",
-                        disableMobile: "true" 
+                        disableMobile: "true",
+                        onChange: function(selectedDates, dateStr, instance) {
+                            cb_update_available_time_slots();
+                        }
                     });
                     flatpickr("#patient_dob", {
                         dateFormat: "d/m/Y",
@@ -721,6 +725,155 @@ function clinic_booking_form_shortcode() {
                     });
                 }
             }, 100);
+
+            // Hàm fetch lịch làm việc của bác sĩ và cập nhật Flatpickr
+            function cb_fetch_doctor_schedule_and_update_flatpickr() {
+                var doctorIdHidden = document.getElementById('doctor_id_hidden');
+                var doctorId = doctorIdHidden ? doctorIdHidden.value : '';
+                var picker = document.querySelector("#booking_date") ? document.querySelector("#booking_date")._flatpickr : null;
+                var timeSelect = document.getElementById('booking_time');
+                
+                if (!doctorId) {
+                    if (picker) {
+                        picker.set("disable", []);
+                    }
+                    if (timeSelect) {
+                        timeSelect.innerHTML = '<option value="">Vui lòng chọn bác sĩ trước</option>';
+                    }
+                    return;
+                }
+                
+                if (timeSelect) {
+                    timeSelect.innerHTML = '<option value="">Vui lòng chọn ngày khám</option>';
+                }
+                
+                var xhr = new XMLHttpRequest();
+                xhr.open('POST', '<?php echo admin_url('admin-ajax.php'); ?>', true);
+                xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+                xhr.onload = function() {
+                    if (this.status === 200) {
+                        try {
+                            var res = JSON.parse(this.responseText);
+                            if (res.success) {
+                                var weekly_schedule = res.data.weekly_schedule;
+                                var days_off = res.data.days_off;
+                                
+                                var dayMap = {
+                                    'sunday': 0,
+                                    'monday': 1,
+                                    'tuesday': 2,
+                                    'wednesday': 3,
+                                    'thursday': 4,
+                                    'friday': 5,
+                                    'saturday': 6
+                                };
+                                
+                                var disabledDays = [];
+                                for (var day in weekly_schedule) {
+                                    if (!weekly_schedule[day].enabled) {
+                                        disabledDays.push(dayMap[day]);
+                                    }
+                                }
+                                
+                                if (picker) {
+                                    picker.set("disable", [
+                                        function(date) {
+                                            return disabledDays.indexOf(date.getDay()) !== -1;
+                                        },
+                                        function(date) {
+                                            var day = ('0' + date.getDate()).slice(-2);
+                                            var month = ('0' + (date.getMonth() + 1)).slice(-2);
+                                            var year = date.getFullYear();
+                                            var dStr = day + '/' + month + '/' + year;
+                                            return days_off.indexOf(dStr) !== -1;
+                                        }
+                                    ]);
+                                    
+                                    // Kiểm tra xem ngày đã chọn trước đó có bị disable không
+                                    var currentDate = picker.selectedDates[0];
+                                    if (currentDate) {
+                                        var dayOfWeek = currentDate.getDay();
+                                        var day = ('0' + currentDate.getDate()).slice(-2);
+                                        var month = ('0' + (currentDate.getMonth() + 1)).slice(-2);
+                                        var year = currentDate.getFullYear();
+                                        var currentDateStr = day + '/' + month + '/' + year;
+                                        
+                                        if (disabledDays.indexOf(dayOfWeek) !== -1 || days_off.indexOf(currentDateStr) !== -1) {
+                                            picker.clear();
+                                            alert('Ngày đã chọn trùng vào ngày nghỉ hoặc ngày không hoạt động của bác sĩ. Vui lòng chọn ngày khám khác.');
+                                        } else {
+                                            cb_update_available_time_slots();
+                                        }
+                                    }
+                                }
+                            }
+                        } catch(e) {}
+                    }
+                };
+                xhr.send('action=cb_get_doctor_schedule&doctor_id=' + doctorId);
+            }
+
+            // Hàm fetch và render các khung giờ còn trống (Auto Block Conflicting Slots)
+            function cb_update_available_time_slots() {
+                var doctorIdHidden = document.getElementById('doctor_id_hidden');
+                var doctorId = doctorIdHidden ? doctorIdHidden.value : '';
+                var bookingDateInput = document.getElementById('booking_date');
+                var bookingDate = bookingDateInput ? bookingDateInput.value : '';
+                var timeSelect = document.getElementById('booking_time');
+                
+                if (!timeSelect) return;
+                
+                if (!doctorId || !bookingDate) {
+                    timeSelect.innerHTML = '<option value="">Chọn giờ</option>';
+                    return;
+                }
+                
+                timeSelect.innerHTML = '<option value="">Đang tải khung giờ...</option>';
+                
+                var xhr = new XMLHttpRequest();
+                xhr.open('POST', '<?php echo admin_url('admin-ajax.php'); ?>', true);
+                xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+                xhr.onload = function() {
+                    if (this.status === 200) {
+                        try {
+                            var res = JSON.parse(this.responseText);
+                            if (res.success) {
+                                if (res.data.is_day_off) {
+                                    timeSelect.innerHTML = '<option value="">Bác sĩ nghỉ phép ngày này</option>';
+                                    alert(res.data.message || 'Bác sĩ đăng ký nghỉ khám phép vào ngày này.');
+                                    return;
+                                }
+                                
+                                if (!res.data.is_working) {
+                                    timeSelect.innerHTML = '<option value="">Bác sĩ không làm việc ngày này</option>';
+                                    alert(res.data.message || 'Bác sĩ không làm việc vào ngày này.');
+                                    return;
+                                }
+                                
+                                var available = res.data.available;
+                                if (available.length === 0) {
+                                    timeSelect.innerHTML = '<option value="">Hết lịch trống ngày này</option>';
+                                    alert('Hết lịch trống, vui lòng chọn ngày khác.');
+                                    return;
+                                }
+                                
+                                timeSelect.innerHTML = '<option value="">Chọn giờ khám</option>';
+                                available.forEach(function(slot) {
+                                    var opt = document.createElement('option');
+                                    opt.value = slot;
+                                    opt.textContent = slot;
+                                    timeSelect.appendChild(opt);
+                                });
+                            } else {
+                                timeSelect.innerHTML = '<option value="">Lỗi tải giờ</option>';
+                            }
+                        } catch(e) {
+                            timeSelect.innerHTML = '<option value="">Lỗi tải giờ</option>';
+                        }
+                    }
+                };
+                xhr.send('action=cb_get_available_slots&doctor_id=' + doctorId + '&booking_date=' + encodeURIComponent(bookingDate));
+            }
 
             var step1 = document.getElementById('cbf-step-1');
             var step2 = document.getElementById('cbf-step-2');
@@ -873,6 +1026,9 @@ function clinic_booking_form_shortcode() {
                 var selectedOption = doctorSelect.options[doctorSelect.selectedIndex];
                 var doctorId = selectedOption ? selectedOption.getAttribute('data-doctor-id') : '';
                 document.getElementById('doctor_id_hidden').value = doctorId || '';
+                
+                // Fetch schedule and update Flatpickr disable rules
+                cb_fetch_doctor_schedule_and_update_flatpickr();
             }
 
             // Cập nhật khi người dùng chọn thủ công
@@ -4753,5 +4909,128 @@ function cb_doctor_schedule_manager_shortcode() {
     $doctor_id = $doctor_posts[0]->ID;
     
     return cb_render_doctor_schedule_manager_html($doctor_id);
+}
+
+/**
+ * =========================================================================
+ * PHASE 4 - AUTO BLOCK CONFLICTING SLOTS AJAX HANDLERS
+ * =========================================================================
+ */
+
+add_action('wp_ajax_cb_get_available_slots', 'cb_ajax_get_available_slots');
+add_action('wp_ajax_nopriv_cb_get_available_slots', 'cb_ajax_get_available_slots');
+function cb_ajax_get_available_slots() {
+    $doctor_id    = isset($_POST['doctor_id']) ? intval($_POST['doctor_id']) : 0;
+    $booking_date = isset($_POST['booking_date']) ? sanitize_text_field($_POST['booking_date']) : '';
+
+    if (!$doctor_id || empty($booking_date)) {
+        wp_send_json_error(array('message' => 'Vui lòng chọn đầy đủ bác sĩ và ngày khám.'));
+    }
+
+    // 1. Kiểm tra Ngày nghỉ phép (_days_off)
+    $days_off = get_post_meta($doctor_id, '_days_off', true);
+    if (is_array($days_off) && in_array($booking_date, $days_off)) {
+        wp_send_json_success(array(
+            'is_day_off'  => true,
+            'is_working'  => false,
+            'available'   => array(),
+            'unavailable' => array(),
+            'message'     => 'Bác sĩ đăng ký nghỉ khám phép vào ngày này.'
+        ));
+    }
+
+    // 2. Xác định Thứ trong tuần
+    $datetime = DateTime::createFromFormat('d/m/Y', $booking_date);
+    if (!$datetime) {
+        wp_send_json_error(array('message' => 'Định dạng ngày không đúng (d/m/Y).'));
+    }
+
+    $weekday = strtolower($datetime->format('l')); // e.g. monday, tuesday...
+    
+    $vietnamese_days = array(
+        'monday'    => 'Thứ Hai',
+        'tuesday'   => 'Thứ Ba',
+        'wednesday' => 'Thứ Tư',
+        'thursday'  => 'Thứ Năm',
+        'friday'    => 'Thứ Sáu',
+        'saturday'  => 'Thứ Bảy',
+        'sunday'    => 'Chủ Nhật'
+    );
+
+    // 3. Lấy Lịch làm việc tuần (_weekly_schedule)
+    $weekly_schedule = get_post_meta($doctor_id, '_weekly_schedule', true);
+    $slots_str = get_option('cb_time_slots', "08:00\n08:30\n09:00\n09:30\n10:00\n10:30\n14:00\n14:30\n15:00\n15:30\n16:00");
+    $all_slots = array_filter(array_map('trim', explode("\n", $slots_str)));
+
+    if (empty($weekly_schedule) || !is_array($weekly_schedule)) {
+        // Lịch tuần mặc định: Thứ 2 -> Thứ 6 hoạt động, Thứ 7 & CN nghỉ
+        $weekly_schedule = array();
+        foreach (array_keys($vietnamese_days) as $day) {
+            $enabled = !in_array($day, array('saturday', 'sunday'));
+            $weekly_schedule[$day] = array(
+                'enabled' => $enabled,
+                'slots'   => $enabled ? array_values($all_slots) : array()
+            );
+        }
+    }
+
+    $day_config = isset($weekly_schedule[$weekday]) ? $weekly_schedule[$weekday] : array('enabled' => false, 'slots' => array());
+    $is_enabled = isset($day_config['enabled']) ? filter_var($day_config['enabled'], FILTER_VALIDATE_BOOLEAN) : false;
+    $doctor_slots = isset($day_config['slots']) && is_array($day_config['slots']) ? $day_config['slots'] : array();
+
+    if (!$is_enabled) {
+        wp_send_json_success(array(
+            'is_day_off'  => false,
+            'is_working'  => false,
+            'available'   => array(),
+            'unavailable' => array(),
+            'message'     => 'Bác sĩ không làm việc vào ngày ' . $vietnamese_days[$weekday] . '.'
+        ));
+    }
+
+    if (empty($doctor_slots)) {
+        wp_send_json_success(array(
+            'is_day_off'  => false,
+            'is_working'  => true,
+            'available'   => array(),
+            'unavailable' => array(),
+            'message'     => 'Bác sĩ không thiết lập khung giờ nhận bệnh nhân trong ngày này.'
+        ));
+    }
+
+    // 4. Truy vấn các Lịch đã đặt trùng giờ (pending, publish, completed)
+    global $wpdb;
+    $booked_slots_raw = $wpdb->get_col($wpdb->prepare("
+        SELECT DISTINCT pm_time.meta_value 
+        FROM {$wpdb->posts} p
+        INNER JOIN {$wpdb->postmeta} pm_doc ON p.ID = pm_doc.post_id AND pm_doc.meta_key = '_doctor_id'
+        INNER JOIN {$wpdb->postmeta} pm_date ON p.ID = pm_date.post_id AND pm_date.meta_key = '_booking_date'
+        INNER JOIN {$wpdb->postmeta} pm_time ON p.ID = pm_time.post_id AND pm_time.meta_key = '_booking_time'
+        WHERE p.post_type = 'appointment'
+          AND p.post_status IN ('pending', 'publish', 'completed')
+          AND pm_doc.meta_value = %s
+          AND pm_date.meta_value = %s
+    ", (string)$doctor_id, $booking_date));
+
+    $booked_slots = array_map('trim', $booked_slots_raw);
+
+    // 5. Lọc ra danh sách slot khả dụng và không khả dụng
+    $available_slots = array();
+    $unavailable_slots = array();
+
+    foreach ($doctor_slots as $slot) {
+        if (in_array($slot, $booked_slots)) {
+            $unavailable_slots[] = $slot;
+        } else {
+            $available_slots[] = $slot;
+        }
+    }
+
+    wp_send_json_success(array(
+        'is_day_off'  => false,
+        'is_working'  => true,
+        'available'   => $available_slots,
+        'unavailable' => $unavailable_slots
+    ));
 }
 ?>
