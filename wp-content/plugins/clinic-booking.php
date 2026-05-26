@@ -11,15 +11,14 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
-// Enqueue Google Font Inter và chèn CSS ghi đè font lỗi cho toàn bộ giao diện của Hệ thống Đặt lịch
+// Enqueue Google Font Inter và chèn CSS ghi đè font lỗi cho giao diện Admin chuyên dụng của Hệ thống Đặt lịch
 function cb_enqueue_vietnamese_font_globally() {
     wp_enqueue_style('cb-google-fonts', 'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap', array(), null);
     
     $custom_css = "
-        body, input, select, textarea, button, p, h1, h2, h3, h4, h5, h6, td, th, span, strong, a, li, 
-        .clinic-booking-container, .doctor-dashboard, .cb-schedule-manager, 
-        .clinic-history-container, .clinic-auth-page, .profile-settings-wrapper {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important;
+        .doctor-dashboard, .cb-schedule-manager, 
+        .clinic-auth-page, .profile-settings-wrapper {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
         }
         .fa, .fas, .far, .fab, .fa-solid, .fa-regular, .fa-brands {
             font-family: 'Font Awesome 6 Free', 'Font Awesome 6 Brands', 'Font Awesome 5 Free', 'Font Awesome 5 Brands', sans-serif !important;
@@ -5710,7 +5709,6 @@ function cb_clinic_doctors_list_shortcode() {
             width: 100%;
             max-width: 1200px;
             margin: 40px auto;
-            font-family: 'Inter', sans-serif;
             box-sizing: border-box;
             padding: 0 15px;
             position: relative;
