@@ -5706,11 +5706,14 @@ function cb_clinic_doctors_list_shortcode() {
 
     <style>
         .cb-doctors-home-section,
-        .cb-doctors-home-section *,
         .cb-doctors-title-home,
-        .cb-doctor-card-showcase,
-        .cb-doctor-card-showcase * {
-            font-family: inherit !important;
+        .cb-doc-prefix,
+        .cb-doc-name,
+        .cb-status-left,
+        .cb-status-right,
+        .cb-detail-txt,
+        .cb-doc-detail-btn {
+            font-family: 'Open Sans', 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important;
         }
         .cb-doctors-home-section {
             width: 100%;
