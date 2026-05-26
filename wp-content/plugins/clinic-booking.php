@@ -5578,7 +5578,7 @@ function cb_clinic_doctors_list_shortcode() {
     ob_start();
     ?>
     <div class="cb-doctors-home-section">
-        <h2 class="cb-doctors-title-home">Bác sĩ tư vấn khám bệnh qua video</h2>
+        <h2 class="cb-doctors-title-home">Đội ngũ bác sĩ</h2>
         
         <!-- Swiper container -->
         <div class="swiper cb-doctors-swiper">
@@ -5705,6 +5705,13 @@ function cb_clinic_doctors_list_shortcode() {
     </div>
 
     <style>
+        .cb-doctors-home-section,
+        .cb-doctors-home-section *,
+        .cb-doctors-title-home,
+        .cb-doctor-card-showcase,
+        .cb-doctor-card-showcase * {
+            font-family: inherit !important;
+        }
         .cb-doctors-home-section {
             width: 100%;
             max-width: 1200px;
