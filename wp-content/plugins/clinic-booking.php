@@ -11,17 +11,16 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
-// Enqueue Google Font Inter, Montserrat và Font Awesome toàn cục cho hệ thống
+// Enqueue Google Font Inter và Font Awesome toàn cục cho hệ thống
 function cb_enqueue_vietnamese_font_globally() {
-    // Tải cả Inter và Montserrat
-    wp_enqueue_style('cb-google-fonts', 'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Montserrat:wght@600;700;800&display=swap', array(), null);
+    // Tải font Inter phiên bản đầy đủ trọng số (300-900)
+    wp_enqueue_style('cb-google-fonts', 'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap', array(), null);
     
     // Tải Font Awesome 6.4.0
     wp_enqueue_style('cb-font-awesome', 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css', array(), null);
     
     $custom_css = "
-        .doctor-dashboard, .cb-schedule-manager, 
-        .clinic-auth-page, .profile-settings-wrapper {
+        * {
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
         }
         .fa, .fas, .far, .fab, .fa-solid, .fa-regular, .fa-brands {
@@ -903,6 +902,7 @@ function clinic_booking_form_shortcode() {
                 if (!doctorId) {
                     if (picker) {
                         picker.set("disable", []);
+                        picker.redraw();
                     }
                     if (timeSelect) {
                         timeSelect.innerHTML = '<option value="">Vui lòng chọn bác sĩ trước</option>';
@@ -955,6 +955,7 @@ function clinic_booking_form_shortcode() {
                                             return days_off.indexOf(dStr) !== -1;
                                         }
                                     ]);
+                                    picker.redraw();
                                     
                                     // Kiểm tra xem ngày đã chọn trước đó có bị disable không
                                     var currentDate = picker.selectedDates[0];
@@ -1662,6 +1663,30 @@ function cb_admin_dashboard_page_html() {
 
     $count_reviews = wp_count_posts('review')->publish;
 
+    // Lấy xu hướng đặt lịch 7 ngày qua
+    $trend_labels = array();
+    $trend_counts = array();
+    for ($i = 6; $i >= 0; $i--) {
+        $date = date('Y-m-d', strtotime("-$i days"));
+        $formatted = date('d/m', strtotime("-$i days"));
+        
+        $args = array(
+            'post_type' => 'appointment',
+            'post_status' => array('publish', 'pending', 'confirmed'),
+            'posts_per_page' => -1,
+            'meta_query' => array(
+                array(
+                    'key' => '_booking_date',
+                    'value' => $date,
+                    'compare' => '='
+                )
+            )
+        );
+        $query = new WP_Query($args);
+        $trend_labels[] = $formatted;
+        $trend_counts[] = $query->found_posts;
+    }
+
     // Lấy 5 cuộc hẹn mới nhất
     $recent_appointments = get_posts(array(
         'post_type' => 'appointment',
@@ -1753,9 +1778,19 @@ function cb_admin_dashboard_page_html() {
 
         </div>
 
-        <!-- Charts Section (SaaS Analytics) -->
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-bottom: 30px;">
+        <!-- 3-Chart SaaS Layout -->
+        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 30px; margin-bottom: 30px;">
             
+            <!-- Chart 3: Booking Trend (Full-width) -->
+            <div style="grid-column: span 2; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 25px; box-shadow: 0 4px 20px rgba(0,0,0,0.02);">
+                <h3 style="margin: 0 0 20px 0; font-size: 17px; font-weight: 800; color: #0f172a; display: flex; align-items: center; gap: 8px;">
+                    📈 Xu Hướng Đặt Lịch Hẹn 7 Ngày Qua
+                </h3>
+                <div style="width: 100%; height: 280px; position: relative;">
+                    <canvas id="chartBookingTrend"></canvas>
+                </div>
+            </div>
+
             <!-- Chart 1: Doctors per Branch -->
             <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 25px; box-shadow: 0 4px 20px rgba(0,0,0,0.02); display: flex; flex-direction: column; align-items: center;">
                 <h3 style="margin: 0 0 20px 0; font-size: 16px; font-weight: 700; color: #0f172a; width: 100%; text-align: left; display: flex; align-items: center; gap: 8px;">
@@ -1887,10 +1922,65 @@ function cb_admin_dashboard_page_html() {
 
     </div>
 
-    <!-- Chart.js Integration -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Script vẽ biểu đồ sử dụng Chart.js enqueued -->
     <script>
     document.addEventListener('DOMContentLoaded', function() {
+        if (typeof Chart === 'undefined') return;
+
+        // Chart 3: Booking Trend (Line/Area with Gradient)
+        var ctx3 = document.getElementById('chartBookingTrend').getContext('2d');
+        var gradient = ctx3.createLinearGradient(0, 0, 0, 280);
+        gradient.addColorStop(0, 'rgba(60, 165, 221, 0.45)');
+        gradient.addColorStop(1, 'rgba(60, 165, 221, 0.02)');
+        
+        new Chart(ctx3, {
+            type: 'line',
+            data: {
+                labels: <?php echo json_encode($trend_labels); ?>,
+                datasets: [{
+                    label: 'Số ca đặt hẹn',
+                    data: <?php echo json_encode($trend_counts); ?>,
+                    borderColor: '#3CA5DD',
+                    borderWidth: 3.5,
+                    backgroundColor: gradient,
+                    fill: true,
+                    tension: 0.4,
+                    pointBackgroundColor: '#ffffff',
+                    pointBorderColor: '#3CA5DD',
+                    pointBorderWidth: 2,
+                    pointRadius: 5,
+                    pointHoverRadius: 7
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            precision: 0,
+                            font: { family: 'Inter', size: 12 }
+                        },
+                        grid: { color: '#f1f5f9' }
+                    },
+                    x: {
+                        ticks: {
+                            font: { family: 'Inter', size: 12, weight: 'bold' }
+                        },
+                        grid: { display: false }
+                    }
+                },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        bodyFont: { family: 'Inter', size: 13 },
+                        titleFont: { family: 'Inter', size: 13, weight: 'bold' }
+                    }
+                }
+            }
+        });
+
         // Chart 1: Doctors per Branch (Doughnut)
         var ctx1 = document.getElementById('chartDoctorsBranch').getContext('2d');
         new Chart(ctx1, {
@@ -1947,7 +2037,7 @@ function cb_admin_dashboard_page_html() {
                         '#f59e0b'
                     ],
                     borderWidth: 1.5,
-                    borderRadius: 6
+                    borderRadius: 8
                 }]
             },
             options: {
@@ -2613,7 +2703,7 @@ function clinic_auth_styles() {
     if ( is_page('dang-nhap') || is_page('dang-ky') || is_page('tai-khoan') ) {
         ?>
         <style>
-            .clinic-auth-page { background: #f7fafc; min-height: 80vh; display: flex; align-items: center; justify-content: center; font-family: 'Montserrat', sans-serif; }
+            .clinic-auth-page { background: #f7fafc; min-height: 80vh; display: flex; align-items: center; justify-content: center; font-family: 'Inter', sans-serif; }
             .clinic-auth-container { max-width: 480px; width: 100%; margin: 40px auto; padding: 50px; background: #fff; border-radius: 20px; box-shadow: 0 20px 50px rgba(0,0,0,0.05); border: 1px solid #f0f0f0; }
             .clinic-auth-form h3 { text-align: center; color: #1a365d; margin-bottom: 35px; text-transform: uppercase; font-weight: 800; letter-spacing: 2px; font-size: 24px; }
             .clinic-auth-form .input-group { margin-bottom: 25px; }
@@ -2748,7 +2838,7 @@ function clinic_services_grid_shortcode() {
             margin: 0 0 12px 0;
             font-size: 22px;
             color: #1a365d;
-            font-family: 'Montserrat', sans-serif;
+            font-family: 'Inter', sans-serif;
             font-weight: 700;
         }
         .cb-service-desc {
@@ -3924,7 +4014,7 @@ function clinic_user_settings_shortcode() {
     ob_start();
     ?>
     <style>
-        .profile-settings-wrapper { display: flex; gap: 50px; max-width: 1100px; margin: 40px auto; font-family: 'Montserrat', sans-serif; background: #fff; padding: 40px; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.05); }
+        .profile-settings-wrapper { display: flex; gap: 50px; max-width: 1100px; margin: 40px auto; font-family: 'Inter', sans-serif; background: #fff; padding: 40px; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.05); }
         .profile-left { flex: 1; text-align: center; border-right: 1px solid #f0f0f0; padding-right: 50px; }
         .profile-right { flex: 2; }
         
@@ -5306,16 +5396,11 @@ function cb_ajax_save_doctor_schedule() {
 }
 
 add_action('wp_ajax_cb_get_doctor_schedule', 'cb_ajax_get_doctor_schedule');
+add_action('wp_ajax_nopriv_cb_get_doctor_schedule', 'cb_ajax_get_doctor_schedule');
 function cb_ajax_get_doctor_schedule() {
     $doctor_id = isset($_POST['doctor_id']) ? intval($_POST['doctor_id']) : 0;
     if (!$doctor_id) {
         wp_send_json_error(array('message' => 'Bác sĩ không hợp lệ.'));
-    }
-
-    $current_user_id = get_current_user_id();
-    $doctor_user_id = intval(get_post_meta($doctor_id, '_doctor_user_id', true));
-    if ($doctor_user_id !== $current_user_id && !current_user_can('manage_options')) {
-        wp_send_json_error(array('message' => 'Bạn không có quyền truy cập lịch làm việc này.'));
     }
 
     $weekly_schedule = get_post_meta($doctor_id, '_weekly_schedule', true);
@@ -6183,7 +6268,7 @@ function cb_clinic_doctors_list_shortcode() {
         .cb-status-right,
         .cb-detail-txt,
         .cb-doc-detail-btn {
-            font-family: 'Open Sans', 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important;
         }
         .cb-doctors-home-section {
             width: 100%;
@@ -6440,22 +6525,34 @@ function cb_clinic_doctors_list_shortcode() {
 // =======================================================
 // TỐI ƯU GIAO DIỆN DANH SÁCH POST TYPES TRONG WP ADMIN
 // =======================================================
+add_action('admin_enqueue_scripts', 'cb_enqueue_admin_inter_font');
+function cb_enqueue_admin_inter_font() {
+    $screen = get_current_screen();
+    if ( !$screen ) return;
+    $target_post_types = array('doctor', 'appointment', 'review', 'clinic_branch', 'specialty');
+    if ( in_array($screen->post_type, $target_post_types) || strpos($screen->id, 'clinic-booking') !== false || strpos($screen->id, 'cb-bulk') !== false ) {
+        wp_enqueue_style('cb-admin-google-fonts', 'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap', array(), null);
+    }
+    
+    // Tải Chart.js nếu ở trang Dashboard quản trị chính hoặc phụ
+    if ( strpos($screen->id, 'clinic-booking-dashboard') !== false || $screen->id === 'dashboard' ) {
+        wp_enqueue_script('cb-chartjs', 'https://cdn.jsdelivr.net/npm/chart.js', array(), null, true);
+    }
+}
+
 add_action('admin_head', 'cb_style_custom_post_types_admin_lists');
 function cb_style_custom_post_types_admin_lists() {
     $screen = get_current_screen();
     if ( !$screen ) return;
     
-    // Áp dụng cho các trang danh sách (edit.php) của các Custom Post Type trong plugin
+    // Áp dụng cho các trang danh sách (edit.php) của các Custom Post Type trong plugin hoặc trang dashboard
     $target_post_types = array('doctor', 'appointment', 'review', 'clinic_branch', 'specialty');
-    if ( in_array($screen->post_type, $target_post_types) ) {
+    if ( in_array($screen->post_type, $target_post_types) || strpos($screen->id, 'clinic-booking') !== false || strpos($screen->id, 'cb-bulk') !== false ) {
         ?>
         <style>
-            /* Nhập Google Font Inter */
-            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-            
-            /* Áp dụng font Inter */
-            #wpbody-content, .wrap {
-                font-family: 'Inter', sans-serif !important;
+            /* Áp dụng font Inter cho TOÀN BỘ phần tử trên trang */
+            #wpwrap, body, #wpbody-content, .wrap, h1, h2, h3, h4, h5, h6, input, select, textarea, button, .postbox, .wp-list-table, .tablenav, td, th {
+                font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
             }
             
             /* Tiêu đề trang */
@@ -6632,5 +6729,119 @@ function cb_style_custom_post_types_admin_lists() {
         </style>
         <?php
     }
+}
+
+// =======================================================
+// WIDGET BIỂU ĐỒ THỐNG KÊ NHANH TRÊN TRANG CHỦ WP-ADMIN
+// =======================================================
+add_action('wp_dashboard_setup', 'cb_register_admin_dashboard_widget');
+function cb_register_admin_dashboard_widget() {
+    wp_add_dashboard_widget(
+        'cb_admin_dashboard_widget',
+        '🏥 Hệ Thống Đặt Lịch - Thống Kê Nhanh',
+        'cb_admin_dashboard_widget_html'
+    );
+}
+
+function cb_admin_dashboard_widget_html() {
+    // Tính toán số liệu thống kê thực tế
+    $count_doctors = wp_count_posts('doctor')->publish;
+    $appointments_count = wp_count_posts('appointment');
+    $count_total_appointments = intval($appointments_count->publish) + intval($appointments_count->pending) + intval($appointments_count->confirmed ?? 0);
+    $count_pending_appointments = intval($appointments_count->pending);
+    
+    ?>
+    <div style="font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+        <!-- Stats Row -->
+        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 20px;">
+            <div style="background: #eff6ff; padding: 12px; border-radius: 8px; text-align: center; box-shadow: inset 0 0 0 1px rgba(37,99,235,0.05);">
+                <div style="font-size: 10px; color: #1e40af; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">Bác sĩ</div>
+                <div style="font-size: 20px; font-weight: 800; color: #1e40af; margin-top: 4px;"><?php echo esc_html($count_doctors); ?></div>
+            </div>
+            <div style="background: #f0fdf4; padding: 12px; border-radius: 8px; text-align: center; box-shadow: inset 0 0 0 1px rgba(22,163,74,0.05);">
+                <div style="font-size: 10px; color: #166534; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">Lịch Hẹn</div>
+                <div style="font-size: 20px; font-weight: 800; color: #166534; margin-top: 4px;"><?php echo esc_html($count_total_appointments); ?></div>
+            </div>
+            <div style="background: #fff7ed; padding: 12px; border-radius: 8px; text-align: center; box-shadow: inset 0 0 0 1px rgba(234,88,12,0.05);">
+                <div style="font-size: 10px; color: #9a3412; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">Chờ Duyệt</div>
+                <div style="font-size: 20px; font-weight: 800; color: #dd6b20; margin-top: 4px;"><?php echo esc_html($count_pending_appointments); ?></div>
+            </div>
+        </div>
+
+        <!-- Micro Chart -->
+        <div style="width: 100%; height: 180px; position: relative;">
+            <canvas id="chartWidgetAppointmentsStatus"></canvas>
+        </div>
+        
+        <!-- View details link -->
+        <div style="text-align: right; margin-top: 15px; border-top: 1px solid #edf2f7; padding-top: 10px;">
+            <a href="<?php echo admin_url('admin.php?page=clinic-booking-dashboard'); ?>" style="color: #3CA5DD; font-weight: 700; font-size: 12px; text-decoration: none; display: inline-flex; align-items: center; gap: 4px;">Xem chi tiết Dashboard →</a>
+        </div>
+    </div>
+
+    <!-- Script rendering the widget micro-chart using Chart.js -->
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Safe check for Chart.js
+        if (typeof Chart === 'undefined') {
+            var interval = setInterval(function() {
+                if (typeof Chart !== 'undefined') {
+                    clearInterval(interval);
+                    cb_init_widget_chart();
+                }
+            }, 100);
+        } else {
+            cb_init_widget_chart();
+        }
+
+        function cb_init_widget_chart() {
+            var ctx = document.getElementById('chartWidgetAppointmentsStatus').getContext('2d');
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: ['Đã duyệt', 'Chờ duyệt'],
+                    datasets: [{
+                        label: 'Số lịch hẹn',
+                        data: [<?php echo intval($appointments_count->publish); ?>, <?php echo intval($appointments_count->pending); ?>],
+                        backgroundColor: [
+                            'rgba(16, 185, 129, 0.85)',
+                            'rgba(245, 158, 11, 0.85)'
+                        ],
+                        borderColor: [
+                            '#10b981',
+                            '#f59e0b'
+                        ],
+                        borderWidth: 1.5,
+                        borderRadius: 6
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                precision: 0,
+                                font: { family: 'Inter', size: 10 }
+                            },
+                            grid: { color: '#f1f5f9' }
+                        },
+                        x: {
+                            ticks: {
+                                font: { family: 'Inter', size: 10, weight: 'bold' }
+                            },
+                            grid: { display: false }
+                        }
+                    },
+                    plugins: {
+                        legend: { display: false }
+                    }
+                }
+            });
+        }
+    });
+    </script>
+    <?php
 }
 ?>
