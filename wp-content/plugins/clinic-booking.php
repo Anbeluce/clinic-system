@@ -1676,6 +1676,15 @@ function cb_admin_dashboard_page_html() {
         'taxonomy' => 'clinic_branch',
         'hide_empty' => false,
     ));
+
+    $branch_labels = array();
+    $branch_counts = array();
+    if ($branches && !is_wp_error($branches)) {
+        foreach ($branches as $br) {
+            $branch_labels[] = $br->name;
+            $branch_counts[] = intval($br->count);
+        }
+    }
     ?>
     <div class="wrap cb-admin-wrap" style="max-width: 1200px; margin: 30px auto; font-family: 'Inter', sans-serif;">
         
@@ -1687,7 +1696,7 @@ function cb_admin_dashboard_page_html() {
                 </div>
                 <div>
                     <h1 style="font-size: 26px; font-weight: 800; color: #1e293b; margin: 0; padding: 0; line-height: 1.2;">Bảng Điều Khiển Hệ Thống</h1>
-                    <p style="color: #64748b; margin: 4px 0 0 0; font-size: 14px;">Tổng quan số liệu, quản lý lịch khám và đội ngũ bác sĩ phòng khám</p>
+                    <p style="color: #64748b; margin: 4px 0 0 0; font-size: 14px;">Tổng quan số liệu, biểu đồ thống kê, quản lý lịch khám và bác sĩ</p>
                 </div>
             </div>
             <div style="display: flex; gap: 10px;">
@@ -1742,6 +1751,30 @@ function cb_admin_dashboard_page_html() {
                 </div>
             </div>
 
+        </div>
+
+        <!-- Charts Section (SaaS Analytics) -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-bottom: 30px;">
+            
+            <!-- Chart 1: Doctors per Branch -->
+            <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 25px; box-shadow: 0 4px 20px rgba(0,0,0,0.02); display: flex; flex-direction: column; align-items: center;">
+                <h3 style="margin: 0 0 20px 0; font-size: 16px; font-weight: 700; color: #0f172a; width: 100%; text-align: left; display: flex; align-items: center; gap: 8px;">
+                    📊 Phân Bố Bác Sĩ Theo Chi Nhánh
+                </h3>
+                <div style="width: 100%; max-width: 320px; height: 260px; position: relative;">
+                    <canvas id="chartDoctorsBranch"></canvas>
+                </div>
+            </div>
+
+            <!-- Chart 2: Appointments Status -->
+            <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 25px; box-shadow: 0 4px 20px rgba(0,0,0,0.02); display: flex; flex-direction: column; align-items: center;">
+                <h3 style="margin: 0 0 20px 0; font-size: 16px; font-weight: 700; color: #0f172a; width: 100%; text-align: left; display: flex; align-items: center; gap: 8px;">
+                    📈 Trạng Thái Lịch Hẹn Khám
+                </h3>
+                <div style="width: 100%; max-width: 360px; height: 260px; position: relative;">
+                    <canvas id="chartAppointmentsStatus"></canvas>
+                </div>
+            </div>
         </div>
 
         <!-- Main Grid (Left table, Right stats) -->
@@ -1853,6 +1886,107 @@ function cb_admin_dashboard_page_html() {
         </div>
 
     </div>
+
+    <!-- Chart.js Integration -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Chart 1: Doctors per Branch (Doughnut)
+        var ctx1 = document.getElementById('chartDoctorsBranch').getContext('2d');
+        new Chart(ctx1, {
+            type: 'doughnut',
+            data: {
+                labels: <?php echo json_encode($branch_labels); ?>,
+                datasets: [{
+                    data: <?php echo json_encode($branch_counts); ?>,
+                    backgroundColor: [
+                        '#3CA5DD',
+                        '#10b981',
+                        '#f59e0b',
+                        '#6366f1',
+                        '#ec4899'
+                    ],
+                    borderWidth: 2,
+                    borderColor: '#ffffff'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: {
+                            font: {
+                                family: 'Inter',
+                                size: 12
+                            },
+                            boxWidth: 12
+                        }
+                    }
+                },
+                cutout: '65%'
+            }
+        });
+
+        // Chart 2: Appointments Status (Bar)
+        var ctx2 = document.getElementById('chartAppointmentsStatus').getContext('2d');
+        new Chart(ctx2, {
+            type: 'bar',
+            data: {
+                labels: ['Đã duyệt', 'Chờ duyệt'],
+                datasets: [{
+                    label: 'Số lịch hẹn',
+                    data: [<?php echo intval($appointments_count->publish); ?>, <?php echo intval($appointments_count->pending); ?>],
+                    backgroundColor: [
+                        'rgba(16, 185, 129, 0.85)', // xanh lá
+                        'rgba(245, 158, 11, 0.85)'  // màu cam
+                    ],
+                    borderColor: [
+                        '#10b981',
+                        '#f59e0b'
+                    ],
+                    borderWidth: 1.5,
+                    borderRadius: 6
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            precision: 0,
+                            font: {
+                                family: 'Inter'
+                            }
+                        },
+                        grid: {
+                            color: '#edf2f7'
+                        }
+                    },
+                    x: {
+                        ticks: {
+                            font: {
+                                family: 'Inter',
+                                weight: 'bold'
+                            }
+                        },
+                        grid: {
+                            display: false
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: false
+                    }
+                }
+            }
+        });
+    });
+    </script>
     <?php
 }
 
