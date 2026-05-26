@@ -3473,27 +3473,9 @@ function doctor_dashboard_shortcode() {
             .dd-tabs { flex-wrap: wrap; }
         }
 
-        /* Doctor Dashboard Main Nav Styles */
-        .dd-main-nav { display: flex; gap: 15px; margin-bottom: 35px; border-bottom: 2px solid #edf2f7; padding-bottom: 15px; }
-        .dd-nav-btn { background: none; border: none; padding: 12px 24px; font-size: 16px; font-weight: 700; color: #718096; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; border-radius: 12px; transition: all 0.2s; font-family: inherit; }
-        .dd-nav-btn:hover { color: #2b6cb0; background: #f7fafc; }
-        .dd-nav-btn.active { color: #fff !important; background: linear-gradient(135deg, #005086 0%, #2b6cb0 100%) !important; box-shadow: 0 4px 12px rgba(43,108,176,0.2); }
-        .dd-tab-pane { display: none; }
-        .dd-tab-pane.active { display: block !important; }
     </style>
 
     <div class="doctor-dashboard">
-        <!-- Main Tab Navigation -->
-        <div class="dd-main-nav">
-            <button class="dd-nav-btn active" data-tab="appointments">
-                <i class="fas fa-calendar-check"></i> Lịch hẹn Bệnh nhân
-            </button>
-            <button class="dd-nav-btn" data-tab="schedule">
-                <i class="fas fa-user-clock"></i> Lịch làm việc & Ngày nghỉ
-            </button>
-        </div>
-
-        <div id="dd-tab-content-appointments" class="dd-tab-pane active">
         <div class="dd-header">
             <div>
                 <h2>Bác sĩ: <?php echo esc_html($doctor_name); ?></h2>
@@ -3642,13 +3624,8 @@ function doctor_dashboard_shortcode() {
                     </tbody>
                 </table>
             <?php endif; ?>
-        </div> <!-- Đóng dd-tab-content-appointments -->
-        
-        <!-- Tab: Lịch làm việc & Ngày nghỉ -->
-        <div id="dd-tab-content-schedule" class="dd-tab-pane" style="display: none;">
-            <?php echo cb_render_doctor_schedule_manager_html($doctor_id); ?>
         </div>
-    </div> <!-- Đóng doctor-dashboard -->
+    </div>
 
     <!-- Modal: Từ chối lịch hẹn -->
     <div id="cb-modal-reject" class="cb-modal">
@@ -3723,16 +3700,6 @@ function doctor_dashboard_shortcode() {
     <script>
     jQuery(document).ready(function($) {
         var ajaxurl = '<?php echo admin_url('admin-ajax.php'); ?>';
-
-        // Xử lý chuyển Main Nav Tabs
-        $('.dd-nav-btn').on('click', function() {
-            var tabId = $(this).data('tab');
-            $('.dd-nav-btn').removeClass('active');
-            $(this).addClass('active');
-            
-            $('.dd-tab-pane').removeClass('active').hide();
-            $('#dd-tab-content-' + tabId).addClass('active').show();
-        });
 
         // 1. Logic Lọc theo Tabs
         $('.dd-tab-btn').on('click', function() {
