@@ -11,9 +11,13 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
-// Enqueue Google Font Inter và chèn CSS ghi đè font lỗi cho giao diện Admin chuyên dụng của Hệ thống Đặt lịch
+// Enqueue Google Font Inter, Montserrat và Font Awesome toàn cục cho hệ thống
 function cb_enqueue_vietnamese_font_globally() {
-    wp_enqueue_style('cb-google-fonts', 'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap', array(), null);
+    // Tải cả Inter và Montserrat
+    wp_enqueue_style('cb-google-fonts', 'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Montserrat:wght@600;700;800&display=swap', array(), null);
+    
+    // Tải Font Awesome 6.4.0
+    wp_enqueue_style('cb-font-awesome', 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css', array(), null);
     
     $custom_css = "
         .doctor-dashboard, .cb-schedule-manager, 
@@ -396,10 +400,8 @@ function clinic_booking_form_shortcode() {
     ));
 
     // Giao diện HTML của Form
-    // 1. Nhúng Flatpickr & Google Fonts
-    wp_enqueue_style('google-fonts', 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@600;700;800&display=swap');
+    // 1. Nhúng Flatpickr (Font Awesome & Google Fonts đã tải toàn cục)
     wp_enqueue_style('flatpickr-css', 'https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css');
-    wp_enqueue_style('font-awesome', 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css');
     wp_enqueue_script('flatpickr-js', 'https://cdn.jsdelivr.net/npm/flatpickr', array(), null, true);
     
     ?>
@@ -2237,8 +2239,7 @@ function clinic_services_grid_shortcode() {
         'Tai Mũi Họng' => 'fa-ear-listen',
     );
 
-    wp_enqueue_style('google-fonts-showcase', 'https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&display=swap');
-    wp_enqueue_style('font-awesome-showcase', 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css');
+    // Font Awesome và Google Fonts đã tải toàn cục
 
     ob_start();
     ?>
@@ -2683,75 +2684,6 @@ function clinic_services_grid_shortcode() {
     return ob_get_clean();
 }
 add_shortcode('clinic_services', 'clinic_services_grid_shortcode');
-function clinic_auth_scripts() {
-    if ( is_page('dang-nhap') || is_page('dang-ky') ) {
-        ?>
-        <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            var forms = document.querySelectorAll('.clinic-auth-form');
-            var messages = {
-                'full_name': 'Vui lòng nhập họ và tên',
-                'user_login': 'Vui lòng nhập tên đăng nhập',
-                'user_email': 'Vui lòng nhập địa chỉ email hợp lệ',
-                'user_pass': 'Vui lòng nhập mật khẩu',
-                'log': 'Vui lòng nhập tên đăng nhập hoặc email',
-                'pwd': 'Vui lòng nhập mật khẩu'
-            };
-
-            forms.forEach(function(form) {
-                form.onsubmit = function(e) {
-                    var isValid = true;
-                    var firstInvalid = null;
-                    
-                    form.querySelectorAll('.cbf-error-msg').forEach(function(msg) { msg.remove(); });
-                    
-                    var inputs = form.querySelectorAll('input[required]');
-                    inputs.forEach(function(el) {
-                        var val = el.value.trim();
-                        var fieldValid = true;
-                        
-                        if (!val) {
-                            fieldValid = false;
-                        } else if (el.type === 'email' && !val.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
-                            fieldValid = false;
-                        }
-
-                        if (!fieldValid) {
-                            el.classList.add('has-error');
-                            isValid = false;
-                            if (!firstInvalid) firstInvalid = el;
-                            
-                            var errorMsg = document.createElement('span');
-                            errorMsg.className = 'cbf-error-msg';
-                            errorMsg.innerText = messages[el.name] || 'Thông tin này là bắt buộc';
-                            el.parentNode.insertBefore(errorMsg, el.nextSibling);
-                        } else {
-                            el.classList.remove('has-error');
-                        }
-
-                        // Xóa lỗi khi nhập lại
-                        el.oninput = function() {
-                            if (this.value.trim()) {
-                                this.classList.remove('has-error');
-                                var next = this.nextSibling;
-                                if (next && next.classList && next.classList.contains('cbf-error-msg')) {
-                                    next.remove();
-                                }
-                            }
-                        };
-                    });
-
-                    if (!isValid) {
-                        e.preventDefault();
-                        if (firstInvalid) firstInvalid.focus();
-                    }
-                };
-            });
-        });
-        </script>
-        <?php
-    }
-}
 
 /**
  * Shortcode for Custom Login Form
@@ -2940,9 +2872,8 @@ function clinic_booking_history_shortcode() {
         return '<div class="clinic-history-container"><p style="text-align:center;">Vui lòng <a href="' . home_url('/dang-nhap/') . '" style="color:#005086; font-weight:700;">đăng nhập</a> để xem lịch sử đặt lịch của bạn.</p></div>';
     }
 
-    // Enqueue Flatpickr and FontAwesome
+    // Enqueue Flatpickr
     wp_enqueue_style('flatpickr-css', 'https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css');
-    wp_enqueue_style('font-awesome', 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css');
     wp_enqueue_script('flatpickr-js', 'https://cdn.jsdelivr.net/npm/flatpickr', array(), null, true);
 
     $current_user_id = get_current_user_id();
@@ -2998,6 +2929,7 @@ function clinic_booking_history_shortcode() {
                             $booking_date = get_post_meta($post_id, '_booking_date', true);
                             $booking_time = get_post_meta($post_id, '_booking_time', true);
                             $doctor = get_post_meta($post_id, '_selected_doctor', true);
+                            $doctor_id = get_post_meta($post_id, '_doctor_id', true);
                             $specialty = get_post_meta($post_id, '_specialty', true);
                             $p_name = get_post_meta($post_id, '_patient_name', true);
 
@@ -3024,7 +2956,7 @@ function clinic_booking_history_shortcode() {
                                 <td>
                                     <div style="display: flex; gap: 8px; flex-wrap: wrap;">
                                         <?php if ($can_modify) : ?>
-                                            <button class="cb-patient-btn cb-patient-reschedule-btn" data-id="<?php echo $post_id; ?>" data-date="<?php echo esc_attr($booking_date); ?>" data-time="<?php echo esc_attr($booking_time); ?>" style="background: #3182ce; color: #fff; border: none; padding: 6px 12px; border-radius: 6px; font-weight: 700; font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; transition: all 0.2s;">
+                                            <button class="cb-patient-btn cb-patient-reschedule-btn" data-id="<?php echo $post_id; ?>" data-doctor-id="<?php echo esc_attr($doctor_id); ?>" data-date="<?php echo esc_attr($booking_date); ?>" data-time="<?php echo esc_attr($booking_time); ?>" style="background: #3182ce; color: #fff; border: none; padding: 6px 12px; border-radius: 6px; font-weight: 700; font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; transition: all 0.2s;">
                                                 <i class="fas fa-calendar-alt"></i> Đổi lịch
                                             </button>
                                             <button class="cb-patient-btn cb-patient-cancel-btn" data-id="<?php echo $post_id; ?>" style="background: #e53e3e; color: #fff; border: none; padding: 6px 12px; border-radius: 6px; font-weight: 700; font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; transition: all 0.2s;">
@@ -3066,23 +2998,17 @@ function clinic_booking_history_shortcode() {
                     <div class="cb-modal-body">
                         <p>Chọn ngày và giờ khám mới của bạn. Sau khi đổi, lịch hẹn sẽ chờ bác sĩ xác nhận lại.</p>
                         <input type="hidden" id="reschedule-app-id" value="">
+                        <input type="hidden" id="reschedule-doctor-id" value="">
                         
                         <div style="margin-bottom: 15px;">
                             <label style="display: block; font-weight: 700; margin-bottom: 5px; color: #1a365d;">Ngày khám mới:</label>
-                            <input type="text" id="reschedule-new-date" placeholder="Chọn ngày khám mới..." style="width: 100%; border: 1px solid #cbd5e0; border-radius: 8px; padding: 10px; font-family: inherit; font-size: 14px;" readonly>
+                            <input type="text" id="reschedule-new-date" placeholder="Chọn ngày khám mới..." style="width: 100%; border: 1px solid #cbd5e0; border-radius: 8px; padding: 10px; font-family: inherit; font-size: 14px; background: #fff;" readonly>
                         </div>
                         
                         <div style="margin-bottom: 15px;">
                             <label style="display: block; font-weight: 700; margin-bottom: 5px; color: #1a365d;">Giờ khám mới:</label>
                             <select id="reschedule-new-time" style="width: 100%; border: 1px solid #cbd5e0; border-radius: 8px; padding: 10px; font-family: inherit; font-size: 14px; background: #fff; height: auto;">
-                                <option value="">-- Chọn khung giờ mới --</option>
-                                <?php 
-                                $slots_str = get_option('cb_time_slots', "08:00\n08:30\n09:00\n09:30\n10:00\n10:30\n14:00\n14:30\n15:00\n15:30\n16:00");
-                                $slots = array_filter(array_map('trim', explode("\n", $slots_str)));
-                                foreach ($slots as $slot) : 
-                                ?>
-                                    <option value="<?php echo esc_attr($slot); ?>"><?php echo esc_html($slot); ?></option>
-                                <?php endforeach; ?>
+                                <option value="">Vui lòng chọn ngày khám mới</option>
                             </select>
                         </div>
                     </div>
@@ -3171,32 +3097,131 @@ function clinic_booking_history_shortcode() {
     <script>
         jQuery(document).ready(function($) {
             var ajaxurl = '<?php echo esc_url( admin_url('admin-ajax.php') ); ?>';
-
-            // Khởi tạo Flatpickr cho ngày đổi lịch khám
-            var flatpickrInterval = setInterval(function() {
-                if (typeof flatpickr !== 'undefined') {
-                    clearInterval(flatpickrInterval);
-                    flatpickr("#reschedule-new-date", {
-                        dateFormat: "d/m/Y",
-                        minDate: "today",
-                        disableMobile: "true"
-                    });
-                }
-            }, 100);
+            var reschedulePicker = null;
 
             // Mở modal Đổi lịch
             $(document).on('click', '.cb-patient-reschedule-btn', function() {
                 var appId = $(this).data('id');
-                var oldDate = $(this).data('date');
-                var oldTime = $(this).data('time');
+                var doctorId = $(this).data('doctor-id');
                 
                 $('#reschedule-app-id').val(appId);
-                $('#reschedule-new-date').val(oldDate);
-                $('#reschedule-new-time').val(oldTime);
+                $('#reschedule-doctor-id').val(doctorId);
+                $('#reschedule-new-date').val('');
+                $('#reschedule-new-time').html('<option value="">Vui lòng chọn ngày khám mới</option>');
                 
                 $('#cb-modal-reschedule').css('display', 'flex');
                 $('body').css('overflow', 'hidden');
+
+                // Khởi tạo/cập nhật Flatpickr kèm theo logic chặn lịch nghỉ
+                cb_init_reschedule_picker(doctorId);
             });
+
+            function cb_init_reschedule_picker(doctorId) {
+                if (reschedulePicker) {
+                    reschedulePicker.destroy();
+                }
+                
+                $.ajax({
+                    url: ajaxurl,
+                    type: 'POST',
+                    data: {
+                        action: 'cb_get_doctor_schedule',
+                        doctor_id: doctorId
+                    },
+                    success: function(response) {
+                        if (response.success) {
+                            var weekly_schedule = response.data.weekly_schedule;
+                            var days_off = response.data.days_off;
+                            
+                            var dayMap = { 'sunday': 0, 'monday': 1, 'tuesday': 2, 'wednesday': 3, 'thursday': 4, 'friday': 5, 'saturday': 6 };
+                            var disabledDays = [];
+                            for (var day in weekly_schedule) {
+                                if (!weekly_schedule[day].enabled) {
+                                    disabledDays.push(dayMap[day]);
+                                }
+                            }
+                            
+                            reschedulePicker = flatpickr("#reschedule-new-date", {
+                                dateFormat: "d/m/Y",
+                                minDate: "today",
+                                disableMobile: "true",
+                                disable: [
+                                    function(date) { return disabledDays.indexOf(date.getDay()) !== -1; },
+                                    function(date) {
+                                        var d = ('0' + date.getDate()).slice(-2);
+                                        var m = ('0' + (date.getMonth() + 1)).slice(-2);
+                                        var y = date.getFullYear();
+                                        return days_off.indexOf(d + '/' + m + '/' + y) !== -1;
+                                    }
+                                ],
+                                onChange: function(selectedDates, dateStr, instance) {
+                                    // Kiểm tra lại sau khi chọn xem có rơi vào ngày nghỉ không
+                                    var currentDate = selectedDates[0];
+                                    if (currentDate) {
+                                        var dayOfWeek = currentDate.getDay();
+                                        var day = ('0' + currentDate.getDate()).slice(-2);
+                                        var month = ('0' + (currentDate.getMonth() + 1)).slice(-2);
+                                        var year = currentDate.getFullYear();
+                                        var currentDateStr = day + '/' + month + '/' + year;
+                                        
+                                        if (disabledDays.indexOf(dayOfWeek) !== -1 || days_off.indexOf(currentDateStr) !== -1) {
+                                            instance.clear();
+                                            alert('Ngày đã chọn trùng vào ngày nghỉ hoặc ngày không hoạt động của bác sĩ. Vui lòng chọn ngày khám khác.');
+                                        } else {
+                                            cb_fetch_available_times_for_reschedule(doctorId, dateStr);
+                                        }
+                                    }
+                                }
+                            });
+                        }
+                    }
+                });
+            }
+
+            function cb_fetch_available_times_for_reschedule(doctorId, dateStr) {
+                var $timeSelect = $('#reschedule-new-time');
+                $timeSelect.html('<option value="">Đang tải khung giờ...</option>');
+                
+                $.ajax({
+                    url: ajaxurl,
+                    type: 'POST',
+                    data: {
+                        action: 'cb_get_available_slots',
+                        doctor_id: doctorId,
+                        booking_date: dateStr
+                    },
+                    success: function(response) {
+                        if (response.success) {
+                            if (response.data.is_day_off) {
+                                $timeSelect.html('<option value="">Bác sĩ nghỉ phép ngày này</option>');
+                                alert(response.data.message || 'Bác sĩ đăng ký nghỉ khám phép vào ngày này.');
+                                return;
+                            }
+                            if (!response.data.is_working) {
+                                $timeSelect.html('<option value="">Bác sĩ không làm việc ngày này</option>');
+                                alert(response.data.message || 'Bác sĩ không làm việc vào ngày này.');
+                                return;
+                            }
+                            
+                            var available = response.data.available;
+                            if (available && available.length > 0) {
+                                var options = '<option value="">-- Chọn khung giờ mới --</option>';
+                                $.each(available, function(index, slot) {
+                                    options += '<option value="' + slot + '">' + slot + '</option>';
+                                });
+                                $timeSelect.html(options);
+                            } else {
+                                $timeSelect.html('<option value="">Không có khung giờ nào</option>');
+                            }
+                        } else {
+                            $timeSelect.html('<option value="">Không thể tải khung giờ</option>');
+                        }
+                    },
+                    error: function() {
+                        $timeSelect.html('<option value="">Lỗi tải khung giờ</option>');
+                    }
+                });
+            }
 
             // Đóng modal khi bấm close hoặc Hủy
             $(document).on('click', '.cb-modal-close, [data-close]', function() {
@@ -3627,6 +3652,25 @@ function cb_get_shortcode_page_permalink($shortcode) {
     return '#';
 }
 
+/**
+ * In ra CSS dùng chung cho Dashboard và Lịch làm việc của Bác sĩ
+ */
+function cb_print_doctor_dashboard_shared_css() {
+    ?>
+    <style>
+        .doctor-dashboard { font-family: 'Inter', sans-serif; max-width: 1200px; margin: 40px auto; color: #2d3748; }
+        .dd-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; background: linear-gradient(135deg, #005086 0%, #2b6cb0 100%); padding: 40px; border-radius: 24px; color: #fff; box-shadow: 0 15px 35px rgba(43,108,176,0.25); }
+        .dd-header h2 { margin: 0; font-size: 32px; font-weight: 800; }
+        .dd-header p { margin: 8px 0 0; opacity: 0.9; font-size: 16px; }
+        
+        .dd-nav-menu { display: flex; gap: 15px; margin-bottom: 30px; border-bottom: 2px solid #edf2f7; padding-bottom: 15px; }
+        .dd-nav-item { display: inline-flex; align-items: center; gap: 8px; padding: 12px 24px; border-radius: 12px; font-weight: 700; text-decoration: none !important; font-size: 15px; transition: all 0.2s; color: #718096; background: transparent; }
+        .dd-nav-item:hover { color: #2b6cb0; background: #f7fafc; }
+        .dd-nav-item.active { color: #2b6cb0; background: #ebf8ff; }
+    </style>
+    <?php
+}
+
 function doctor_dashboard_shortcode() {
     // 1. Kiểm tra đăng nhập
     if (!is_user_logged_in()) {
@@ -3728,18 +3772,9 @@ function doctor_dashboard_shortcode() {
     }
 
     ob_start();
+    cb_print_doctor_dashboard_shared_css();
     ?>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
-        .doctor-dashboard { font-family: 'Inter', sans-serif; max-width: 1200px; margin: 40px auto; color: #2d3748; }
-        .dd-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; background: linear-gradient(135deg, #005086 0%, #2b6cb0 100%); padding: 40px; border-radius: 24px; color: #fff; box-shadow: 0 15px 35px rgba(43,108,176,0.25); }
-        .dd-header h2 { margin: 0; font-size: 32px; font-weight: 800; }
-        .dd-header p { margin: 8px 0 0; opacity: 0.9; font-size: 16px; }
-        
-        .dd-nav-menu { display: flex; gap: 15px; margin-bottom: 30px; border-bottom: 2px solid #edf2f7; padding-bottom: 15px; }
-        .dd-nav-item { display: inline-flex; align-items: center; gap: 8px; padding: 12px 24px; border-radius: 12px; font-weight: 700; text-decoration: none !important; font-size: 15px; transition: all 0.2s; color: #718096; background: transparent; }
-        .dd-nav-item:hover { color: #2b6cb0; background: #f7fafc; }
-        .dd-nav-item.active { color: #2b6cb0; background: #ebf8ff; }
         
         .dd-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 25px; margin-bottom: 40px; }
         .dd-stat-card { background: #fff; padding: 25px; border-radius: 20px; box-shadow: 0 10px 20px rgba(0,0,0,0.03); border: 1px solid #edf2f7; display: flex; align-items: center; gap: 20px; }
@@ -5234,18 +5269,9 @@ function cb_doctor_schedule_manager_shortcode() {
     $schedule_page_url = cb_get_shortcode_page_permalink('doctor_schedule_manager');
 
     ob_start();
+    cb_print_doctor_dashboard_shared_css();
     ?>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
-        .doctor-dashboard { font-family: 'Inter', sans-serif; max-width: 1200px; margin: 40px auto; color: #2d3748; }
-        .dd-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; background: linear-gradient(135deg, #005086 0%, #2b6cb0 100%); padding: 40px; border-radius: 24px; color: #fff; box-shadow: 0 15px 35px rgba(43,108,176,0.25); }
-        .dd-header h2 { margin: 0; font-size: 32px; font-weight: 800; }
-        .dd-header p { margin: 8px 0 0; opacity: 0.9; font-size: 16px; }
-        
-        .dd-nav-menu { display: flex; gap: 15px; margin-bottom: 30px; border-bottom: 2px solid #edf2f7; padding-bottom: 15px; }
-        .dd-nav-item { display: inline-flex; align-items: center; gap: 8px; padding: 12px 24px; border-radius: 12px; font-weight: 700; text-decoration: none !important; font-size: 15px; transition: all 0.2s; color: #718096; background: transparent; }
-        .dd-nav-item:hover { color: #2b6cb0; background: #f7fafc; }
-        .dd-nav-item.active { color: #2b6cb0; background: #ebf8ff; }
         
         .cb-schedule-manager-wrapper { background: #fff; border-radius: 24px; padding: 40px; box-shadow: 0 15px 45px rgba(0,0,0,0.05); border: 1px solid #edf2f7; }
     </style>
@@ -5525,10 +5551,6 @@ function cb_ajax_submit_doctor_review() {
     ));
 }
 
-/**
- * Shortcode: Hiển thị danh sách Đội ngũ Bác sĩ kèm đánh giá sao uy tín
- * Shortcode: [clinic_doctors_list]
- */
 /**
  * Shortcode: Hiển thị danh sách Đội ngũ Bác sĩ kèm đánh giá sao uy tín dưới dạng Slider
  * Shortcode: [clinic_doctors_list]
