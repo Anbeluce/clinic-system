@@ -158,7 +158,7 @@ function create_doctor_post_type() {
         'public' => true,
         'supports' => array( 'title', 'editor', 'thumbnail', 'excerpt' ), // Hỗ trợ ảnh đại diện và tóm tắt
         'menu_icon' => 'dashicons-groups',
-        'has_archive' => true,
+        'has_archive' => false,
         'rewrite' => array('slug' => 'bac-si'), // Đường dẫn: domain.com/bac-si/ten-bac-si
     );
     register_post_type( 'doctor', $args );
@@ -5599,19 +5599,5 @@ function cb_clinic_doctors_list_shortcode() {
     </style>
     <?php
     return ob_get_clean();
-}
-
-/**
- * Tự động chuyển hướng từ trang Archive Bác sĩ mặc định của WordPress sang trang danh sách bác sĩ chứa shortcode
- */
-add_action('template_redirect', 'cb_redirect_doctor_archive_to_shortcode_page');
-function cb_redirect_doctor_archive_to_shortcode_page() {
-    if (is_post_type_archive('doctor')) {
-        $showcase_page_url = cb_get_shortcode_page_permalink('clinic_doctors_list');
-        if ($showcase_page_url !== '#') {
-            wp_redirect($showcase_page_url, 301);
-            exit;
-        }
-    }
 }
 ?>
