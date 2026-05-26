@@ -5886,7 +5886,7 @@ function cb_clinic_doctors_list_shortcode() {
             justify-content: center;
             width: 100%;
             padding: 11px 16px;
-            background: #0f2d59;
+            background: #3CA5DD;
             color: #ffffff !important;
             font-size: 14px;
             font-weight: 700;
@@ -5895,13 +5895,13 @@ function cb_clinic_doctors_list_shortcode() {
             margin-top: 20px;
             transition: all 0.2s ease;
             box-sizing: border-box;
-            border: 1px solid #0f2d59;
+            border: 1px solid #3CA5DD;
         }
         .cb-doc-detail-btn:hover {
-            background: #1e3a8a;
-            border-color: #1e3a8a;
+            background: #2B94CC;
+            border-color: #2B94CC;
             transform: translateY(-2px);
-            box-shadow: 0 5px 12px rgba(15, 45, 89, 0.2);
+            box-shadow: 0 5px 12px rgba(60, 165, 221, 0.2);
         }
 
         /* Swiper premium arrows */
@@ -5936,7 +5936,7 @@ function cb_clinic_doctors_list_shortcode() {
             bottom: 0px !important;
         }
         .cb-swiper-pagination .swiper-pagination-bullet-active {
-            background: #0f2d59 !important;
+            background: #3CA5DD !important;
             width: 18px;
             border-radius: 4px;
             transition: width 0.3s ease;

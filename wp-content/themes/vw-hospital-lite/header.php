@@ -26,8 +26,8 @@
     
     /* User Dropdown Style */
     .user-account-dropdown { position: relative; display: inline-block; }
-    .user-dropbtn { background: #005086; color: white; padding: 8px 18px; border-radius: 50px; border: none; font-size: 13px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 10px; transition: all 0.3s; }
-    .user-dropbtn:hover { background: #003d66; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+    .user-dropbtn { background: #3CA5DD; color: white; padding: 8px 18px; border-radius: 50px; border: none; font-size: 14px; font-weight: 800; cursor: pointer; display: flex; align-items: center; gap: 10px; transition: all 0.3s; }
+    .user-dropbtn:hover { background: #2B94CC; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
     .user-dropdown-content { display: none; position: absolute; right: 0; background-color: #fff; min-width: 200px; box-shadow: 0px 10px 30px rgba(0,0,0,0.15); z-index: 1000; border-radius: 12px; margin-top: 5px; border: 1px solid #eee; }
     /* Cầu nối tàng hình để không bị mất hover */
     .user-dropdown-content::before { content: ""; position: absolute; top: -15px; left: 0; width: 100%; height: 15px; display: block; }
@@ -182,7 +182,7 @@
                     <div class="user-account-dropdown">
                         <button class="user-dropbtn">
                             <i class="fas fa-user-circle" style="font-size: 18px;"></i>
-                            <span>Chào, <?php echo esc_html($current_user->display_name); ?></span>
+                            <span><strong>Chào, <?php echo esc_html($current_user->display_name); ?></strong></span>
                             <i class="fas fa-chevron-down" style="font-size: 10px;"></i>
                         </button>
                         <div class="user-dropdown-content">
