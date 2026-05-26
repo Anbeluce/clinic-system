@@ -3292,6 +3292,26 @@ add_shortcode( 'clinic_user_settings', 'clinic_user_settings_shortcode' );
 // ==========================================
 // DASHBOARD DÀNH RIÊNG CHO BÁC SĨ
 // ==========================================
+
+/**
+ * Helper: Tìm đường dẫn của trang chứa shortcode chỉ định
+ */
+function cb_get_shortcode_page_permalink($shortcode) {
+    global $wpdb;
+    $pages = $wpdb->get_results($wpdb->prepare("
+        SELECT ID FROM {$wpdb->posts} 
+        WHERE post_type = 'page' 
+          AND post_status = 'publish' 
+          AND post_content LIKE %s
+        LIMIT 1
+    ", '%' . $wpdb->esc_like('[' . $shortcode) . '%'));
+    
+    if (!empty($pages)) {
+        return get_permalink($pages[0]->ID);
+    }
+    return '#';
+}
+
 function doctor_dashboard_shortcode() {
     // 1. Kiểm tra đăng nhập
     if (!is_user_logged_in()) {
@@ -3326,6 +3346,9 @@ function doctor_dashboard_shortcode() {
 
     $doctor_id = $doctor_posts[0]->ID;
     $doctor_name = $doctor_posts[0]->post_title;
+
+    $dashboard_page_url = cb_get_shortcode_page_permalink('doctor_dashboard');
+    $schedule_page_url = cb_get_shortcode_page_permalink('doctor_schedule_manager');
 
     // 3. TỰ ĐỘNG CẬP NHẬT ID CHO LỊCH CŨ (Nếu chưa có ID nhưng khớp tên)
     // Việc này giúp các lịch bạn đã đặt trước đó vẫn hiện ra
@@ -3397,6 +3420,11 @@ function doctor_dashboard_shortcode() {
         .dd-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; background: linear-gradient(135deg, #005086 0%, #2b6cb0 100%); padding: 40px; border-radius: 24px; color: #fff; box-shadow: 0 15px 35px rgba(43,108,176,0.25); }
         .dd-header h2 { margin: 0; font-size: 32px; font-weight: 800; }
         .dd-header p { margin: 8px 0 0; opacity: 0.9; font-size: 16px; }
+        
+        .dd-nav-menu { display: flex; gap: 15px; margin-bottom: 30px; border-bottom: 2px solid #edf2f7; padding-bottom: 15px; }
+        .dd-nav-item { display: inline-flex; align-items: center; gap: 8px; padding: 12px 24px; border-radius: 12px; font-weight: 700; text-decoration: none !important; font-size: 15px; transition: all 0.2s; color: #718096; background: transparent; }
+        .dd-nav-item:hover { color: #2b6cb0; background: #f7fafc; }
+        .dd-nav-item.active { color: #2b6cb0; background: #ebf8ff; }
         
         .dd-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 25px; margin-bottom: 40px; }
         .dd-stat-card { background: #fff; padding: 25px; border-radius: 20px; box-shadow: 0 10px 20px rgba(0,0,0,0.03); border: 1px solid #edf2f7; display: flex; align-items: center; gap: 20px; }
@@ -3485,6 +3513,15 @@ function doctor_dashboard_shortcode() {
                 <div style="font-size: 14px; opacity: 0.8; font-weight: 600;">NGÀY HÔM NAY</div>
                 <div style="font-size: 24px; font-weight: 800;"><?php echo date('d/m/Y'); ?></div>
             </div>
+        </div>
+
+        <div class="dd-nav-menu">
+            <a href="<?php echo esc_url($dashboard_page_url); ?>" class="dd-nav-item active">
+                <i class="fas fa-calendar-check"></i> Lịch Hẹn Bệnh Nhân
+            </a>
+            <a href="<?php echo esc_url($schedule_page_url); ?>" class="dd-nav-item" <?php if ($schedule_page_url === '#') : ?>onclick="alert('Chưa cấu hình trang Quản lý Lịch. Vui lòng tạo một trang mới trong WordPress Admin và chèn shortcode [doctor_schedule_manager] vào trang đó.'); return false;"<?php endif; ?>>
+                <i class="fas fa-user-clock"></i> Cấu hình Lịch & Ngày nghỉ
+            </a>
         </div>
 
         <div class="dd-stats">
@@ -4876,8 +4913,55 @@ function cb_doctor_schedule_manager_shortcode() {
     }
 
     $doctor_id = $doctor_posts[0]->ID;
-    
-    return cb_render_doctor_schedule_manager_html($doctor_id);
+    $doctor_name = $doctor_posts[0]->post_title;
+
+    $dashboard_page_url = cb_get_shortcode_page_permalink('doctor_dashboard');
+    $schedule_page_url = cb_get_shortcode_page_permalink('doctor_schedule_manager');
+
+    ob_start();
+    ?>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        .doctor-dashboard { font-family: 'Inter', sans-serif; max-width: 1200px; margin: 40px auto; color: #2d3748; }
+        .dd-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; background: linear-gradient(135deg, #005086 0%, #2b6cb0 100%); padding: 40px; border-radius: 24px; color: #fff; box-shadow: 0 15px 35px rgba(43,108,176,0.25); }
+        .dd-header h2 { margin: 0; font-size: 32px; font-weight: 800; }
+        .dd-header p { margin: 8px 0 0; opacity: 0.9; font-size: 16px; }
+        
+        .dd-nav-menu { display: flex; gap: 15px; margin-bottom: 30px; border-bottom: 2px solid #edf2f7; padding-bottom: 15px; }
+        .dd-nav-item { display: inline-flex; align-items: center; gap: 8px; padding: 12px 24px; border-radius: 12px; font-weight: 700; text-decoration: none !important; font-size: 15px; transition: all 0.2s; color: #718096; background: transparent; }
+        .dd-nav-item:hover { color: #2b6cb0; background: #f7fafc; }
+        .dd-nav-item.active { color: #2b6cb0; background: #ebf8ff; }
+        
+        .cb-schedule-manager-wrapper { background: #fff; border-radius: 24px; padding: 40px; box-shadow: 0 15px 45px rgba(0,0,0,0.05); border: 1px solid #edf2f7; }
+    </style>
+
+    <div class="doctor-dashboard">
+        <div class="dd-header">
+            <div>
+                <h2>Bác sĩ: <?php echo esc_html($doctor_name); ?></h2>
+                <p><i class="fas fa-check-circle"></i> Quản lý lịch khám bệnh và cấu hình ngày nghỉ phép.</p>
+            </div>
+            <div style="text-align: right;">
+                <div style="font-size: 14px; opacity: 0.8; font-weight: 600;">NGÀY HÔM NAY</div>
+                <div style="font-size: 24px; font-weight: 800;"><?php echo date('d/m/Y'); ?></div>
+            </div>
+        </div>
+
+        <div class="dd-nav-menu">
+            <a href="<?php echo esc_url($dashboard_page_url); ?>" class="dd-nav-item" <?php if ($dashboard_page_url === '#') : ?>onclick="alert('Chưa cấu hình trang Dashboard Bác sĩ. Vui lòng tạo một trang mới trong WordPress Admin và chèn shortcode [doctor_dashboard] vào trang đó.'); return false;"<?php endif; ?>>
+                <i class="fas fa-calendar-check"></i> Lịch Hẹn Bệnh Nhân
+            </a>
+            <a href="<?php echo esc_url($schedule_page_url); ?>" class="dd-nav-item active">
+                <i class="fas fa-user-clock"></i> Cấu hình Lịch & Ngày nghỉ
+            </a>
+        </div>
+
+        <div class="cb-schedule-manager-wrapper">
+            <?php echo cb_render_doctor_schedule_manager_html($doctor_id); ?>
+        </div>
+    </div>
+    <?php
+    return ob_get_clean();
 }
 
 /**
