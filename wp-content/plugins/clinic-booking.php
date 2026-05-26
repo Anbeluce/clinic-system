@@ -41,6 +41,19 @@ function create_appointment_post_type() {
 // Hook vào lúc init để đăng ký post type
 add_action( 'init', 'create_appointment_post_type' );
 
+// Đăng ký Custom Post Status 'completed' (Đã khám xong)
+function cb_register_custom_post_status() {
+    register_post_status( 'completed', array(
+        'label'                     => 'Đã khám xong',
+        'public'                    => true,
+        'exclude_from_search'       => false,
+        'show_in_admin_all_list'    => true,
+        'show_in_admin_status_list' => true,
+        'label_count'               => _n_noop( 'Đã khám xong <span class="count">(%s)</span>', 'Đã khám xong <span class="count">(%s)</span>' ),
+    ) );
+}
+add_action( 'init', 'cb_register_custom_post_status' );
+
 // Hàm khởi tạo Custom Post Type cho 'Bác sĩ'
 function create_doctor_post_type() {
     $args = array(
@@ -2595,7 +2608,7 @@ function clinic_booking_history_shortcode() {
     $current_user_id = get_current_user_id();
     $args = array(
         'post_type'      => 'appointment',
-        'post_status'    => array('pending', 'publish', 'draft', 'private'),
+        'post_status'    => array('pending', 'publish', 'draft', 'private', 'completed'),
         'author'         => $current_user_id,
         'posts_per_page' => -1,
         'orderby'        => 'date',
@@ -2630,7 +2643,13 @@ function clinic_booking_history_shortcode() {
                             if ($status == 'publish') {
                                 $status_label = 'Đã xác nhận';
                                 $status_class = 'status-confirmed';
-                            } elseif ($status == 'draft' || $status == 'private') {
+                            } elseif ($status == 'completed') {
+                                $status_label = 'Đã khám xong';
+                                $status_class = 'status-completed';
+                            } elseif ($status == 'private') {
+                                $status_label = 'Đã từ chối';
+                                $status_class = 'status-rejected';
+                            } elseif ($status == 'draft') {
                                 $status_label = 'Đã hủy';
                                 $status_class = 'status-cancelled';
                             }
@@ -2676,7 +2695,9 @@ function clinic_booking_history_shortcode() {
         .status-badge { display: inline-block; padding: 6px 14px; border-radius: 50px; font-size: 11px; font-weight: 700; text-transform: uppercase; }
         .status-pending { background: #fefcbf; color: #744210; }
         .status-confirmed { background: #c6f6d5; color: #22543d; }
-        .status-cancelled { background: #fed7d7; color: #822727; }
+        .status-completed { background: #e0f2fe; color: #0369a1; }
+        .status-rejected { background: #fee2e2; color: #991b1b; }
+        .status-cancelled { background: #edf2f7; color: #4a5568; }
         @media (max-width: 600px) { .clinic-history-container { padding: 20px; } }
     </style>
     <?php
@@ -2951,7 +2972,7 @@ function doctor_dashboard_shortcode() {
         FROM {$wpdb->posts} p
         INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id
         WHERE p.post_type = 'appointment'
-          AND p.post_status IN ('pending', 'publish', 'private', 'draft')
+          AND p.post_status IN ('pending', 'publish', 'private', 'draft', 'completed')
           AND (
             (pm.meta_key = '_doctor_id' AND pm.meta_value = %s)
             OR 
@@ -2981,16 +3002,27 @@ function doctor_dashboard_shortcode() {
         INNER JOIN {$wpdb->postmeta} pm1 ON p.ID = pm1.post_id
         LEFT JOIN {$wpdb->postmeta} pm2 ON (p.ID = pm2.post_id AND pm2.meta_key = '_booking_date')
         WHERE p.post_type = 'appointment'
-          AND p.post_status IN ('pending', 'publish', 'private', 'draft')
+          AND p.post_status IN ('pending', 'publish', 'private', 'draft', 'completed')
           AND pm1.meta_key = '_doctor_id'
           AND pm1.meta_value = %s
         ORDER BY pm2.meta_value DESC
     ", (string)$doctor_id));
 
     $appointments = array();
+    $pending_count = 0;
+    $confirmed_count = 0;
+    $completed_count = 0;
     if (!empty($appointments_raw)) {
         foreach ($appointments_raw as $post_raw) {
-            $appointments[] = new WP_Post($post_raw);
+            $post_obj = new WP_Post($post_raw);
+            $appointments[] = $post_obj;
+            if ($post_obj->post_status === 'pending') {
+                $pending_count++;
+            } elseif ($post_obj->post_status === 'publish') {
+                $confirmed_count++;
+            } elseif ($post_obj->post_status === 'completed') {
+                $completed_count++;
+            }
         }
     }
 
@@ -3008,6 +3040,7 @@ function doctor_dashboard_shortcode() {
         .dd-stat-icon { width: 60px; height: 60px; border-radius: 16px; display: flex; align-items: center; justify-content: center; font-size: 24px; }
         .icon-blue { background: #ebf8ff; color: #2b6cb0; }
         .icon-green { background: #f0fff4; color: #38a169; }
+        .icon-yellow { background: #fffaf0; color: #dd6b20; }
         
         .dd-stat-info h3 { margin: 0; font-size: 14px; text-transform: uppercase; color: #718096; letter-spacing: 1px; }
         .dd-stat-info .value { font-size: 28px; font-weight: 800; color: #1a365d; }
@@ -3022,6 +3055,43 @@ function doctor_dashboard_shortcode() {
         .status-badge { display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: 50px; font-size: 12px; font-weight: 700; text-transform: uppercase; }
         .status-pending { background: #fffaf0; color: #975a16; border: 1px solid #fbd38d; }
         .status-confirmed { background: #f0fff4; color: #276749; border: 1px solid #9ae6b4; }
+        .status-completed { background: #ebf8ff; color: #2b6cb0; border: 1px solid #90cdf4; }
+        .status-rejected { background: #fff5f5; color: #c53030; border: 1px solid #feb2b2; }
+        .status-cancelled { background: #edf2f7; color: #4a5568; border: 1px solid #cbd5e0; }
+        
+        .dd-tabs { display: flex; gap: 15px; margin-bottom: 25px; border-bottom: 2px solid #edf2f7; padding-bottom: 10px; margin-top: 10px; }
+        .dd-tab-btn { background: none; border: none; padding: 10px 20px; font-size: 14px; font-weight: 700; color: #718096; cursor: pointer; position: relative; transition: all 0.2s; border-radius: 8px; }
+        .dd-tab-btn:hover { color: #2b6cb0; background: #f7fafc; }
+        .dd-tab-btn.active { color: #2b6cb0; background: #ebf8ff; }
+
+        .action-cell { display: flex; gap: 8px; flex-wrap: wrap; }
+        .cb-action-btn { border: none; padding: 8px 12px; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; transition: all 0.2s ease; line-height: 1.2; }
+        .cb-btn-confirm { background: #38a169; color: #fff; }
+        .cb-btn-confirm:hover { background: #2f855a; transform: translateY(-1px); }
+        .cb-btn-reject { background: #e53e3e; color: #fff; }
+        .cb-btn-reject:hover { background: #c53030; transform: translateY(-1px); }
+        .cb-btn-complete { background: #3182ce; color: #fff; }
+        .cb-btn-complete:hover { background: #2b6cb0; transform: translateY(-1px); }
+        .cb-btn-view-notes { background: #4a5568; color: #fff; }
+        .cb-btn-view-notes:hover { background: #2d3748; transform: translateY(-1px); }
+        .cb-btn-view-reason { background: #dd6b20; color: #fff; }
+        .cb-btn-view-reason:hover { background: #c05621; transform: translateY(-1px); }
+
+        /* Modal Styles */
+        .cb-modal { display: none; position: fixed; z-index: 9999; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.5); align-items: center; justify-content: center; backdrop-filter: blur(4px); transition: all 0.3s ease; }
+        .cb-modal-content { background-color: #fff; margin: auto; padding: 30px; border-radius: 20px; width: 90%; max-width: 500px; box-shadow: 0 20px 40px rgba(0,0,0,0.15); border: 1px solid #edf2f7; animation: slideDown 0.3s ease-out; }
+        .cb-modal-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #edf2f7; padding-bottom: 15px; margin-bottom: 20px; }
+        .cb-modal-header h3 { margin: 0; font-size: 20px; font-weight: 800; color: #1a365d; }
+        .cb-modal-close { color: #a0aec0; font-size: 28px; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        .cb-modal-close:hover { color: #4a5568; }
+        .cb-modal-body { margin-bottom: 25px; line-height: 1.5; color: #4a5568; }
+        .cb-modal-body p { margin-top: 0; margin-bottom: 15px; font-size: 14px; }
+        .cb-modal-footer { display: flex; justify-content: flex-end; gap: 10px; border-top: 1px solid #edf2f7; padding-top: 15px; }
+        
+        @keyframes slideDown {
+            from { transform: translateY(-30px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
         
         .patient-info { display: flex; align-items: center; gap: 15px; }
         .patient-avatar { width: 45px; height: 45px; border-radius: 14px; background: linear-gradient(135deg, #ebf8ff 0%, #bee3f8 100%); color: #2b6cb0; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 16px; box-shadow: 0 4px 10px rgba(43,108,176,0.1); }
@@ -3036,6 +3106,8 @@ function doctor_dashboard_shortcode() {
             .dd-table td::before { content: attr(data-label); position: absolute; left: 25px; font-weight: 800; font-size: 11px; text-transform: uppercase; color: #a0aec0; }
             .dd-table tr { display: block; border-bottom: 8px solid #f7fafc; padding: 15px 0; }
             .patient-info { justify-content: flex-end; }
+            .action-cell { justify-content: flex-end; }
+            .dd-tabs { flex-wrap: wrap; }
         }
     </style>
 
@@ -3053,31 +3125,40 @@ function doctor_dashboard_shortcode() {
 
         <div class="dd-stats">
             <div class="dd-stat-card">
-                <div class="dd-stat-icon icon-blue">
-                    <i class="fas fa-calendar-check"></i>
+                <div class="dd-stat-icon icon-yellow">
+                    <i class="fas fa-clock"></i>
                 </div>
                 <div class="dd-stat-info">
-                    <h3>Tổng số ca khám</h3>
-                    <div class="value"><?php echo count($appointments); ?></div>
+                    <h3>Chờ xác nhận</h3>
+                    <div class="value"><?php echo $pending_count; ?></div>
                 </div>
             </div>
             <div class="dd-stat-card">
                 <div class="dd-stat-icon icon-green">
-                    <i class="fas fa-user-clock"></i>
+                    <i class="fas fa-check-circle"></i>
                 </div>
                 <div class="dd-stat-info">
-                    <h3>Lịch khám mới nhất</h3>
-                    <div class="value">
-                        <?php 
-                            $latest_count = 0;
-                            foreach($appointments as $app) {
-                                if ($app->post_status === 'pending') $latest_count++;
-                            }
-                            echo $latest_count;
-                        ?>
-                    </div>
+                    <h3>Đã xác nhận</h3>
+                    <div class="value"><?php echo $confirmed_count; ?></div>
                 </div>
             </div>
+            <div class="dd-stat-card">
+                <div class="dd-stat-icon icon-blue">
+                    <i class="fas fa-clipboard-check"></i>
+                </div>
+                <div class="dd-stat-info">
+                    <h3>Đã khám xong</h3>
+                    <div class="value"><?php echo $completed_count; ?></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tabs lọc trạng thái -->
+        <div class="dd-tabs">
+            <button class="dd-tab-btn active" data-status="all">Tất cả (<?php echo count($appointments); ?>)</button>
+            <button class="dd-tab-btn" data-status="pending">Chờ xác nhận (<?php echo $pending_count; ?>)</button>
+            <button class="dd-tab-btn" data-status="publish">Đã xác nhận (<?php echo $confirmed_count; ?>)</button>
+            <button class="dd-tab-btn" data-status="completed">Đã khám xong (<?php echo $completed_count; ?>)</button>
         </div>
 
         <div class="dd-table-container">
@@ -3095,6 +3176,7 @@ function doctor_dashboard_shortcode() {
                             <th>Liên hệ</th>
                             <th>Vấn đề sức khỏe</th>
                             <th>Trạng thái</th>
+                            <th>Thao tác</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -3108,7 +3190,7 @@ function doctor_dashboard_shortcode() {
                             
                             $initials = mb_substr($patient_name, 0, 1);
                         ?>
-                        <tr>
+                        <tr data-status="<?php echo esc_attr($status); ?>">
                             <td data-label="Bệnh nhân">
                                 <div class="patient-info">
                                     <div class="patient-avatar"><?php echo esc_html($initials); ?></div>
@@ -3128,16 +3210,50 @@ function doctor_dashboard_shortcode() {
                                 </a>
                             </td>
                             <td data-label="Triệu chứng">
-                                <div style="max-width: 250px; font-style: italic; color: #4a5568; line-height: 1.4;" title="<?php echo esc_attr($symptoms); ?>">
+                                <div style="max-width: 200px; font-style: italic; color: #4a5568; line-height: 1.4;" title="<?php echo esc_attr($symptoms); ?>">
                                     "<?php echo esc_html(wp_trim_words(str_replace('Triệu chứng: ', '', $symptoms), 15)); ?>"
                                 </div>
                             </td>
                             <td data-label="Trạng thái">
                                 <?php if ($status === 'pending') : ?>
-                                    <span class="status-badge status-pending"><i class="fas fa-hourglass-half"></i> Chờ khám</span>
-                                <?php else : ?>
-                                    <span class="status-badge status-confirmed"><i class="fas fa-check-double"></i> Đã khám</span>
+                                    <span class="status-badge status-pending"><i class="fas fa-hourglass-half"></i> Chờ xác nhận</span>
+                                <?php elseif ($status === 'publish') : ?>
+                                    <span class="status-badge status-confirmed"><i class="fas fa-check-circle"></i> Đã xác nhận</span>
+                                <?php elseif ($status === 'completed') : ?>
+                                    <span class="status-badge status-completed"><i class="fas fa-clipboard-check"></i> Đã khám xong</span>
+                                <?php elseif ($status === 'private') : ?>
+                                    <span class="status-badge status-rejected"><i class="fas fa-times-circle"></i> Đã từ chối</span>
+                                <?php elseif ($status === 'draft') : ?>
+                                    <span class="status-badge status-cancelled"><i class="fas fa-ban"></i> Đã hủy</span>
                                 <?php endif; ?>
+                            </td>
+                            <td data-label="Thao tác">
+                                <div class="action-cell">
+                                    <?php if ($status === 'pending') : ?>
+                                        <button class="cb-action-btn cb-btn-confirm" data-id="<?php echo $app->ID; ?>" title="Xác nhận lịch hẹn">
+                                            <i class="fas fa-check"></i> Xác nhận
+                                        </button>
+                                        <button class="cb-action-btn cb-btn-reject" data-id="<?php echo $app->ID; ?>" title="Từ chối lịch hẹn">
+                                            <i class="fas fa-times"></i> Từ chối
+                                        </button>
+                                    <?php elseif ($status === 'publish') : ?>
+                                        <button class="cb-action-btn cb-btn-complete" data-id="<?php echo $app->ID; ?>" title="Đánh dấu đã khám xong">
+                                            <i class="fas fa-notes-medical"></i> Hoàn thành
+                                        </button>
+                                    <?php elseif ($status === 'completed') : ?>
+                                        <?php $notes = get_post_meta($app->ID, '_medical_notes', true); ?>
+                                        <button class="cb-action-btn cb-btn-view-notes" data-id="<?php echo $app->ID; ?>" data-notes="<?php echo esc_attr($notes); ?>" title="Xem ghi chú y khoa">
+                                            <i class="fas fa-eye"></i> Xem ghi chú
+                                        </button>
+                                    <?php elseif ($status === 'private') : ?>
+                                        <?php $reason = get_post_meta($app->ID, '_reject_reason', true); ?>
+                                        <button class="cb-action-btn cb-btn-view-reason" data-id="<?php echo $app->ID; ?>" data-reason="<?php echo esc_attr($reason); ?>" title="Xem lý do từ chối">
+                                            <i class="fas fa-info-circle"></i> Xem lý do
+                                        </button>
+                                    <?php else : ?>
+                                        <span style="color: #a0aec0;">-</span>
+                                    <?php endif; ?>
+                                </div>
                             </td>
                         </tr>
                         <?php endforeach; ?>
@@ -3146,8 +3262,517 @@ function doctor_dashboard_shortcode() {
             <?php endif; ?>
         </div>
     </div>
+
+    <!-- Modal: Từ chối lịch hẹn -->
+    <div id="cb-modal-reject" class="cb-modal">
+        <div class="cb-modal-content">
+            <div class="cb-modal-header">
+                <h3>Từ chối lịch hẹn</h3>
+                <span class="cb-modal-close" data-modal="cb-modal-reject">&times;</span>
+            </div>
+            <div class="cb-modal-body">
+                <p>Vui lòng nhập lý do từ chối lịch hẹn này. Thông báo sẽ được gửi cho bệnh nhân.</p>
+                <input type="hidden" id="reject-app-id" value="">
+                <textarea id="reject-reason-text" placeholder="Ví dụ: Bác sĩ có ca phẫu thuật đột xuất..." rows="4" style="width: 100%; border: 1px solid #cbd5e0; border-radius: 8px; padding: 12px; font-family: inherit; font-size: 14px; resize: vertical;"></textarea>
+            </div>
+            <div class="cb-modal-footer">
+                <button class="cb-action-btn cb-btn-reject" id="cb-confirm-reject">Xác nhận Từ chối</button>
+                <button class="cb-action-btn cb-btn-view-notes" style="background: #edf2f7; color: #4a5568;" data-close="cb-modal-reject">Hủy</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Nhập ghi chú y khoa (Đã khám xong) -->
+    <div id="cb-modal-complete" class="cb-modal">
+        <div class="cb-modal-content">
+            <div class="cb-modal-header">
+                <h3>Hoàn thành khám bệnh</h3>
+                <span class="cb-modal-close" data-modal="cb-modal-complete">&times;</span>
+            </div>
+            <div class="cb-modal-body">
+                <p>Nhập ghi chú y khoa hoặc chỉ định sau khi khám cho bệnh nhân:</p>
+                <input type="hidden" id="complete-app-id" value="">
+                <textarea id="medical-notes-text" placeholder="Nhập ghi chú y khoa, chẩn đoán, thuốc kê đơn (nếu có)..." rows="6" style="width: 100%; border: 1px solid #cbd5e0; border-radius: 8px; padding: 12px; font-family: inherit; font-size: 14px; resize: vertical;"></textarea>
+            </div>
+            <div class="cb-modal-footer">
+                <button class="cb-action-btn cb-btn-complete" id="cb-confirm-complete">Đã khám xong</button>
+                <button class="cb-action-btn cb-btn-view-notes" style="background: #edf2f7; color: #4a5568;" data-close="cb-modal-complete">Hủy</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Xem ghi chú y khoa (Readonly) -->
+    <div id="cb-modal-view-notes" class="cb-modal">
+        <div class="cb-modal-content">
+            <div class="cb-modal-header">
+                <h3>Ghi chú y khoa</h3>
+                <span class="cb-modal-close" data-modal="cb-modal-view-notes">&times;</span>
+            </div>
+            <div class="cb-modal-body">
+                <div id="view-notes-content" style="background: #f7fafc; border: 1px solid #edf2f7; padding: 15px; border-radius: 8px; font-style: italic; white-space: pre-wrap; min-height: 100px;"></div>
+            </div>
+            <div class="cb-modal-footer">
+                <button class="cb-action-btn cb-btn-view-notes" data-close="cb-modal-view-notes">Đóng</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Xem lý do từ chối (Readonly) -->
+    <div id="cb-modal-view-reason" class="cb-modal">
+        <div class="cb-modal-content">
+            <div class="cb-modal-header">
+                <h3>Lý do từ chối lịch hẹn</h3>
+                <span class="cb-modal-close" data-modal="cb-modal-view-reason">&times;</span>
+            </div>
+            <div class="cb-modal-body">
+                <div id="view-reason-content" style="background: #fff5f5; border: 1px solid #feb2b2; color: #c53030; padding: 15px; border-radius: 8px; font-style: italic; white-space: pre-wrap; min-height: 80px;"></div>
+            </div>
+            <div class="cb-modal-footer">
+                <button class="cb-action-btn cb-btn-view-notes" data-close="cb-modal-view-reason">Đóng</button>
+            </div>
+        </div>
+    </div> <!-- Đóng thẻ div modal-view-reason thiếu -->
+
+    <script>
+    jQuery(document).ready(function($) {
+        var ajaxurl = '<?php echo admin_url('admin-ajax.php'); ?>';
+
+        // 1. Logic Lọc theo Tabs
+        $('.dd-tab-btn').on('click', function() {
+            $('.dd-tab-btn').removeClass('active');
+            $(this).addClass('active');
+
+            var status = $(this).data('status');
+            if (status === 'all') {
+                $('.dd-table tbody tr').show();
+            } else {
+                $('.dd-table tbody tr').hide();
+                $('.dd-table tbody tr[data-status="' + status + '"]').show();
+            }
+        });
+
+        // Helper đóng modal
+        function closeModal(modalId) {
+            $('#' + modalId).css('display', 'none');
+            $('body').css('overflow', 'auto');
+        }
+
+        // Helper mở modal
+        function openModal(modalId) {
+            $('#' + modalId).css('display', 'flex');
+            $('body').css('overflow', 'hidden');
+        }
+
+        // Đăng ký sự kiện đóng các Modal
+        $('.cb-modal-close, [data-close]').on('click', function() {
+            var modalId = $(this).data('modal') || $(this).data('close');
+            closeModal(modalId);
+        });
+
+        // Đóng khi click bên ngoài modal
+        $(window).on('click', function(event) {
+            if ($(event.target).hasClass('cb-modal')) {
+                $(event.target).css('display', 'none');
+                $('body').css('overflow', 'auto');
+            }
+        });
+
+        // 2. Xử lý Xác nhận lịch hẹn (pending -> publish)
+        $(document).on('click', '.cb-btn-confirm', function() {
+            var $btn = $(this);
+            var appId = $btn.data('id');
+            
+            if (!confirm('Bạn có chắc chắn muốn xác nhận lịch hẹn này?')) return;
+
+            $btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Đang duyệt...');
+
+            $.ajax({
+                url: ajaxurl,
+                type: 'POST',
+                data: {
+                    action: 'cb_doctor_confirm_appointment',
+                    appointment_id: appId
+                },
+                success: function(response) {
+                    if (response.success) {
+                        alert(response.data.message);
+                        location.reload();
+                    } else {
+                        alert('Lỗi: ' + response.data.message);
+                        $btn.prop('disabled', false).html('<i class="fas fa-check"></i> Xác nhận');
+                    }
+                },
+                error: function() {
+                    alert('Đã xảy ra lỗi kết nối.');
+                    $btn.prop('disabled', false).html('<i class="fas fa-check"></i> Xác nhận');
+                }
+            });
+        });
+
+        // 3. Xử lý Mở modal Từ chối
+        $(document).on('click', '.cb-btn-reject', function() {
+            var appId = $(this).data('id');
+            $('#reject-app-id').val(appId);
+            $('#reject-reason-text').val('');
+            openModal('cb-modal-reject');
+        });
+
+        // Click Xác nhận Từ chối trong Modal
+        $('#cb-confirm-reject').on('click', function() {
+            var $btn = $(this);
+            var appId = $('#reject-app-id').val();
+            var reason = $('#reject-reason-text').val().trim();
+
+            if (!reason) {
+                alert('Vui lòng nhập lý do từ chối.');
+                return;
+            }
+
+            $btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Đang xử lý...');
+
+            $.ajax({
+                url: ajaxurl,
+                type: 'POST',
+                data: {
+                    action: 'cb_doctor_reject_appointment',
+                    appointment_id: appId,
+                    reject_reason: reason
+                },
+                success: function(response) {
+                    if (response.success) {
+                        alert(response.data.message);
+                        closeModal('cb-modal-reject');
+                        location.reload();
+                    } else {
+                        alert('Lỗi: ' + response.data.message);
+                        $btn.prop('disabled', false).text('Xác nhận Từ chối');
+                    }
+                },
+                error: function() {
+                    alert('Đã xảy ra lỗi kết nối.');
+                    $btn.prop('disabled', false).text('Xác nhận Từ chối');
+                }
+            });
+        });
+
+        // 4. Xử lý Mở modal Đã khám xong
+        $(document).on('click', '.cb-btn-complete', function() {
+            var appId = $(this).data('id');
+            $('#complete-app-id').val(appId);
+            $('#medical-notes-text').val('');
+            openModal('cb-modal-complete');
+        });
+
+        // Click Xác nhận Hoàn thành trong Modal
+        $('#cb-confirm-complete').on('click', function() {
+            var $btn = $(this);
+            var appId = $('#complete-app-id').val();
+            var notes = $('#medical-notes-text').val().trim();
+
+            $btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Đang lưu...');
+
+            $.ajax({
+                url: ajaxurl,
+                type: 'POST',
+                data: {
+                    action: 'cb_doctor_complete_appointment',
+                    appointment_id: appId,
+                    medical_notes: notes
+                },
+                success: function(response) {
+                    if (response.success) {
+                        alert(response.data.message);
+                        closeModal('cb-modal-complete');
+                        location.reload();
+                    } else {
+                        alert('Lỗi: ' + response.data.message);
+                        $btn.prop('disabled', false).text('Đã khám xong');
+                    }
+                },
+                error: function() {
+                    alert('Đã xảy ra lỗi kết nối.');
+                    $btn.prop('disabled', false).text('Đã khám xong');
+                }
+            });
+        });
+
+        // 5. Xử lý Xem ghi chú y khoa
+        $(document).on('click', '.cb-btn-view-notes', function() {
+            var notes = $(this).data('notes') || 'Không có ghi chú nào.';
+            $('#view-notes-content').text(notes);
+            openModal('cb-modal-view-notes');
+        });
+
+        // 6. Xử lý Xem lý do từ chối
+        $(document).on('click', '.cb-btn-view-reason', function() {
+            var reason = $(this).data('reason') || 'Không có lý do.';
+            $('#view-reason-content').text(reason);
+            openModal('cb-modal-view-reason');
+        });
+    });
+    </script>
     <?php
     return ob_get_clean();
 }
 add_shortcode('doctor_dashboard', 'doctor_dashboard_shortcode');
+
+/**
+ * =========================================================================
+ * PHASE 1 - AJAX HANDLERS & HELPERS FOR DOCTOR ACTIONS
+ * =========================================================================
+ */
+
+/**
+ * Kiểm tra xem người dùng hiện tại có quyền thao tác trên lịch hẹn này hay không.
+ * Trả về doctor ID nếu hợp lệ, hoặc WP_Error nếu không hợp lệ.
+ */
+function cb_check_appointment_doctor_permission($appointment_id) {
+    if (!is_user_logged_in()) {
+        return new WP_Error('not_logged_in', 'Bạn cần đăng nhập để thực hiện thao tác này.');
+    }
+
+    $appointment_id = intval($appointment_id);
+    if (!$appointment_id || get_post_type($appointment_id) !== 'appointment') {
+        return new WP_Error('invalid_appointment', 'Lịch hẹn không hợp lệ.');
+    }
+
+    $current_user_id = get_current_user_id();
+
+    // Admin có toàn quyền
+    if (current_user_can('administrator')) {
+        return get_post_meta($appointment_id, '_doctor_id', true);
+    }
+
+    // Lấy thông tin Bác sĩ của user hiện tại
+    $doctor_posts = get_posts(array(
+        'post_type' => 'doctor',
+        'meta_query' => array(
+            array(
+                'key' => '_doctor_user_id',
+                'value' => $current_user_id,
+            )
+        ),
+        'posts_per_page' => 1
+    ));
+
+    if (empty($doctor_posts)) {
+        return new WP_Error('not_a_doctor', 'Tài khoản của bạn không được liên kết với bác sĩ nào.');
+    }
+
+    $doctor_id = $doctor_posts[0]->ID;
+    $appointment_doctor_id = get_post_meta($appointment_id, '_doctor_id', true);
+
+    if (intval($appointment_doctor_id) !== intval($doctor_id)) {
+        return new WP_Error('unauthorized', 'Bạn không có quyền thao tác trên lịch hẹn của bác sĩ khác.');
+    }
+
+    return $doctor_id;
+}
+
+/**
+ * AJAX: Bác sĩ xác nhận lịch hẹn (pending -> publish)
+ */
+add_action('wp_ajax_cb_doctor_confirm_appointment', 'cb_ajax_doctor_confirm_appointment');
+function cb_ajax_doctor_confirm_appointment() {
+    $appointment_id = isset($_POST['appointment_id']) ? intval($_POST['appointment_id']) : 0;
+    
+    $check = cb_check_appointment_doctor_permission($appointment_id);
+    if (is_wp_error($check)) {
+        wp_send_json_error(array('message' => $check->get_error_message()));
+    }
+
+    $post_status = get_post_status($appointment_id);
+    if ($post_status !== 'pending') {
+        wp_send_json_error(array('message' => 'Lịch hẹn phải ở trạng thái Chờ xác nhận mới có thể duyệt.'));
+    }
+
+    // Cập nhật trạng thái thành publish (Đã xác nhận)
+    $update = wp_update_post(array(
+        'ID'          => $appointment_id,
+        'post_status' => 'publish'
+    ));
+
+    if (is_wp_error($update)) {
+        wp_send_json_error(array('message' => 'Có lỗi xảy ra khi cập nhật trạng thái.'));
+    }
+
+    // Gửi email thông báo xác nhận cho bệnh nhân
+    cb_send_appointment_confirmed_email($appointment_id);
+
+    wp_send_json_success(array('message' => 'Xác nhận lịch hẹn thành công.'));
+}
+
+/**
+ * AJAX: Bác sĩ từ chối lịch hẹn (pending -> private + lý do)
+ */
+add_action('wp_ajax_cb_doctor_reject_appointment', 'cb_ajax_doctor_reject_appointment');
+function cb_ajax_doctor_reject_appointment() {
+    $appointment_id = isset($_POST['appointment_id']) ? intval($_POST['appointment_id']) : 0;
+    $reject_reason  = isset($_POST['reject_reason']) ? sanitize_text_field($_POST['reject_reason']) : '';
+
+    if (empty($reject_reason)) {
+        wp_send_json_error(array('message' => 'Vui lòng cung cấp lý do từ chối.'));
+    }
+    
+    $check = cb_check_appointment_doctor_permission($appointment_id);
+    if (is_wp_error($check)) {
+        wp_send_json_error(array('message' => $check->get_error_message()));
+    }
+
+    $post_status = get_post_status($appointment_id);
+    if ($post_status !== 'pending') {
+        wp_send_json_error(array('message' => 'Chỉ có thể từ chối lịch hẹn ở trạng thái Chờ xác nhận.'));
+    }
+
+    // Cập nhật trạng thái thành private (Từ chối)
+    $update = wp_update_post(array(
+        'ID'          => $appointment_id,
+        'post_status' => 'private'
+    ));
+
+    if (is_wp_error($update)) {
+        wp_send_json_error(array('message' => 'Có lỗi xảy ra khi cập nhật trạng thái.'));
+    }
+
+    // Lưu lý do từ chối
+    update_post_meta($appointment_id, '_reject_reason', $reject_reason);
+
+    // Gửi email từ chối cho bệnh nhân kèm lý do
+    cb_send_appointment_rejected_email($appointment_id, $reject_reason);
+
+    wp_send_json_success(array('message' => 'Đã từ chối lịch hẹn thành công.'));
+}
+
+/**
+ * AJAX: Bác sĩ hoàn thành lịch hẹn (publish -> completed + ghi chú y khoa)
+ */
+add_action('wp_ajax_cb_doctor_complete_appointment', 'cb_ajax_doctor_complete_appointment');
+function cb_ajax_doctor_complete_appointment() {
+    $appointment_id = isset($_POST['appointment_id']) ? intval($_POST['appointment_id']) : 0;
+    $medical_notes  = isset($_POST['medical_notes']) ? sanitize_textarea_field($_POST['medical_notes']) : '';
+    
+    $check = cb_check_appointment_doctor_permission($appointment_id);
+    if (is_wp_error($check)) {
+        wp_send_json_error(array('message' => $check->get_error_message()));
+    }
+
+    $post_status = get_post_status($appointment_id);
+    if ($post_status !== 'publish') {
+        wp_send_json_error(array('message' => 'Chỉ có thể đánh giá hoàn thành các lịch hẹn đã xác nhận.'));
+    }
+
+    // Cập nhật trạng thái thành completed (Đã khám)
+    $update = wp_update_post(array(
+        'ID'          => $appointment_id,
+        'post_status' => 'completed'
+    ));
+
+    if (is_wp_error($update)) {
+        wp_send_json_error(array('message' => 'Có lỗi xảy ra khi cập nhật trạng thái.'));
+    }
+
+    // Lưu ghi chú y khoa
+    update_post_meta($appointment_id, '_medical_notes', $medical_notes);
+
+    wp_send_json_success(array('message' => 'Đã hoàn thành khám và lưu ghi chú thành công.'));
+}
+
+/**
+ * =========================================================================
+ * PHASE 1 - EMAIL NOTIFICATION UTILITIES
+ * =========================================================================
+ */
+
+/**
+ * Hàm chung hỗ trợ gửi email (sử dụng Brevo API nếu có cài đặt, ngược lại dùng wp_mail)
+ */
+function cb_send_email($to, $subject, $message, $registrant_name = '') {
+    $brevo_api_key = get_option('cb_brevo_api_key');
+    $brevo_sender_email = get_option('cb_brevo_sender_email');
+    if (empty($brevo_sender_email)) {
+        $brevo_sender_email = 'no-reply@yourdomain.com';
+    }
+
+    if (!empty($brevo_api_key) && $brevo_api_key !== 'ĐIỀN_API_KEY_CỦA_BẠN_VÀO_ĐÂY') {
+        $response = wp_remote_post('https://api.brevo.com/v3/smtp/email', array(
+            'headers' => array(
+                'accept' => 'application/json',
+                'api-key' => $brevo_api_key,
+                'content-type' => 'application/json'
+            ),
+            'body' => wp_json_encode(array(
+                'sender' => array('name' => 'Phòng Khám', 'email' => $brevo_sender_email),
+                'to' => array(array('email' => $to, 'name' => $registrant_name)),
+                'subject' => $subject,
+                'textContent' => $message 
+            )),
+            'data_format' => 'body'
+        ));
+
+        $response_code = wp_remote_retrieve_response_code($response);
+        return ($response_code === 201 || $response_code === 200);
+    } else {
+        $headers = array('Content-Type: text/plain; charset=UTF-8');
+        return wp_mail($to, $subject, $message, $headers);
+    }
+}
+
+/**
+ * Gửi email thông báo cho bệnh nhân khi bác sĩ XÁC NHẬN lịch hẹn
+ */
+function cb_send_appointment_confirmed_email($appointment_id) {
+    $patient_email = get_post_meta($appointment_id, '_patient_email', true);
+    if (empty($patient_email)) return false;
+
+    $patient_name  = get_post_meta($appointment_id, '_patient_name', true);
+    $booking_date  = get_post_meta($appointment_id, '_booking_date', true);
+    $booking_time  = get_post_meta($appointment_id, '_booking_time', true);
+    
+    // Lấy tên bác sĩ
+    $doctor_id = get_post_meta($appointment_id, '_doctor_id', true);
+    $doctor_name = $doctor_id ? get_the_title($doctor_id) : get_post_meta($appointment_id, '_selected_doctor', true);
+
+    $subject = 'Lịch hẹn khám của bạn đã được XÁC NHẬN';
+    $message = "Chào {$patient_name},\n\n";
+    $message .= "Lịch hẹn đặt khám của bạn đã được bác sĩ xác nhận thành công!\n\n";
+    $message .= "Thông tin chi tiết lịch khám:\n";
+    $message .= "- Bác sĩ khám: {$doctor_name}\n";
+    $message .= "- Ngày khám: {$booking_date}\n";
+    $message .= "- Khung giờ: {$booking_time}\n\n";
+    $message .= "Vui lòng đến phòng khám trước giờ hẹn 15 phút để hoàn tất thủ tục.\n";
+    $message .= "Cảm ơn bạn đã tin tưởng hệ thống phòng khám của chúng tôi.\n\n";
+    $message .= "Trân trọng,\nHệ thống Phòng khám";
+
+    return cb_send_email($patient_email, $subject, $message, $patient_name);
+}
+
+/**
+ * Gửi email thông báo cho bệnh nhân khi bác sĩ TỪ CHỐI lịch hẹn
+ */
+function cb_send_appointment_rejected_email($appointment_id, $reject_reason) {
+    $patient_email = get_post_meta($appointment_id, '_patient_email', true);
+    if (empty($patient_email)) return false;
+
+    $patient_name  = get_post_meta($appointment_id, '_patient_name', true);
+    $booking_date  = get_post_meta($appointment_id, '_booking_date', true);
+    $booking_time  = get_post_meta($appointment_id, '_booking_time', true);
+    
+    // Lấy tên bác sĩ
+    $doctor_id = get_post_meta($appointment_id, '_doctor_id', true);
+    $doctor_name = $doctor_id ? get_the_title($doctor_id) : get_post_meta($appointment_id, '_selected_doctor', true);
+
+    $subject = 'Thông báo: Lịch hẹn khám của bạn không thể xác nhận';
+    $message = "Chào {$patient_name},\n\n";
+    $message .= "Chúng tôi rất tiếc khi phải thông báo rằng bác sĩ không thể nhận lịch khám của bạn vào thời gian đã chọn.\n\n";
+    $message .= "Thông tin lịch hẹn bị từ chối:\n";
+    $message .= "- Bác sĩ khám: {$doctor_name}\n";
+    $message .= "- Ngày khám: {$booking_date}\n";
+    $message .= "- Khung giờ: {$booking_time}\n";
+    $message .= "- Lý do từ chối: {$reject_reason}\n\n";
+    $message .= "Bạn có thể truy cập website để đặt lại lịch hẹn vào ngày giờ khác hoặc chọn bác sĩ khác phù hợp.\n";
+    $message .= "Mong bạn thông cảm cho sự bất tiện này.\n\n";
+    $message .= "Trân trọng,\nHệ thống Phòng khám";
+
+    return cb_send_email($patient_email, $subject, $message, $patient_name);
+}
 ?>
