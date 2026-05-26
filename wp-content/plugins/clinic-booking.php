@@ -6068,4 +6068,201 @@ function cb_clinic_doctors_list_shortcode() {
     <?php
     return ob_get_clean();
 }
+
+// =======================================================
+// TỐI ƯU GIAO DIỆN DANH SÁCH POST TYPES TRONG WP ADMIN
+// =======================================================
+add_action('admin_head', 'cb_style_custom_post_types_admin_lists');
+function cb_style_custom_post_types_admin_lists() {
+    $screen = get_current_screen();
+    if ( !$screen ) return;
+    
+    // Áp dụng cho các trang danh sách (edit.php) của các Custom Post Type trong plugin
+    $target_post_types = array('doctor', 'appointment', 'review', 'clinic_branch', 'specialty');
+    if ( in_array($screen->post_type, $target_post_types) ) {
+        ?>
+        <style>
+            /* Nhập Google Font Inter */
+            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+            
+            /* Áp dụng font Inter */
+            #wpbody-content, .wrap {
+                font-family: 'Inter', sans-serif !important;
+            }
+            
+            /* Tiêu đề trang */
+            .wrap h1 {
+                font-size: 26px !important;
+                font-weight: 800 !important;
+                color: #0f172a !important;
+                margin-bottom: 20px !important;
+                display: inline-block;
+            }
+            
+            /* Nút "Thêm mới" trên đầu trang */
+            .wrap .page-title-action {
+                background: #3CA5DD !important;
+                border-color: #3CA5DD !important;
+                color: #fff !important;
+                border-radius: 8px !important;
+                padding: 8px 18px !important;
+                font-weight: 700 !important;
+                font-size: 13px !important;
+                box-shadow: 0 4px 12px rgba(60, 165, 221, 0.3) !important;
+                border: none !important;
+                transition: all 0.3s ease !important;
+                margin-left: 15px !important;
+                vertical-align: middle !important;
+                text-shadow: none !important;
+            }
+            .wrap .page-title-action:hover {
+                background: #2b91c8 !important;
+                color: #fff !important;
+                box-shadow: 0 6px 18px rgba(60, 165, 221, 0.4) !important;
+            }
+            
+            /* Tối ưu bộ lọc và thanh tìm kiếm */
+            .subsubsub {
+                margin-bottom: 15px !important;
+            }
+            .subsubsub a {
+                color: #64748b !important;
+                font-weight: 600;
+                text-decoration: none !important;
+            }
+            .subsubsub a.current {
+                color: #3CA5DD !important;
+                font-weight: 700;
+            }
+            
+            .tablenav .actions select, 
+            .tablenav input[type="submit"], 
+            .search-box input[type="search"], 
+            #search-submit {
+                border-radius: 8px !important;
+                border: 1px solid #cbd5e1 !important;
+                padding: 6px 12px !important;
+                font-size: 13px !important;
+                height: auto !important;
+                background: #fff !important;
+                color: #475569 !important;
+                font-weight: 600 !important;
+            }
+            .tablenav input[type="submit"]:hover, #search-submit:hover {
+                background: #f8fafc !important;
+                border-color: #94a3b8 !important;
+                color: #1e293b !important;
+            }
+
+            /* Thiết kế lại bảng dữ liệu WP-List-Table */
+            .wp-list-table {
+                border: 1px solid #e2e8f0 !important;
+                box-shadow: 0 8px 30px rgba(0,0,0,0.03) !important;
+                border-radius: 12px !important;
+                overflow: hidden !important;
+                background: #fff !important;
+                border-collapse: separate !important;
+                border-spacing: 0 !important;
+            }
+            .wp-list-table thead th {
+                background: #f8fafc !important;
+                border-bottom: 2px solid #e2e8f0 !important;
+                color: #475569 !important;
+                font-weight: 700 !important;
+                font-size: 13px !important;
+                padding: 15px 12px !important;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+            }
+            .wp-list-table tbody tr {
+                transition: background 0.2s ease;
+            }
+            .wp-list-table tbody tr:hover {
+                background: #f8fafc !important;
+            }
+            .wp-list-table tbody td, .wp-list-table tbody th {
+                padding: 16px 12px !important;
+                border-bottom: 1px solid #edf2f7 !important;
+                font-size: 14px !important;
+                color: #334155 !important;
+                vertical-align: middle !important;
+            }
+            
+            /* Tên bài viết (Bác sĩ, Cuộc hẹn,...) */
+            .wp-list-table .row-title {
+                font-weight: 700 !important;
+                color: #0f172a !important;
+                font-size: 15px !important;
+                text-decoration: none !important;
+            }
+            .wp-list-table .row-title:hover {
+                color: #3CA5DD !important;
+            }
+            
+            /* Thiết kế các taxonomy (Chi nhánh, Chuyên khoa) thành Badge cực đẹp */
+            .wp-list-table td.column-taxonomy-clinic_branch a,
+            .wp-list-table td.column-taxonomy-specialty a {
+                display: inline-block;
+                padding: 6px 14px !important;
+                border-radius: 50px !important;
+                font-size: 12px !important;
+                font-weight: 700 !important;
+                text-decoration: none !important;
+                transition: all 0.2s ease;
+            }
+            
+            /* Badge Chi nhánh (màu xanh dương nhạt dịu mát) */
+            .wp-list-table td.column-taxonomy-clinic_branch a {
+                background: #e0f2fe !important;
+                color: #0369a1 !important;
+            }
+            .wp-list-table td.column-taxonomy-clinic_branch a:hover {
+                background: #bae6fd !important;
+                color: #025a87 !important;
+            }
+            
+            /* Badge Chuyên khoa (màu lục nhạt) */
+            .wp-list-table td.column-taxonomy-specialty a {
+                background: #dcfce7 !important;
+                color: #15803d !important;
+            }
+            .wp-list-table td.column-taxonomy-specialty a:hover {
+                background: #bbf7d0 !important;
+                color: #166534 !important;
+            }
+
+            /* Badge trạng thái đặt lịch (Cho cột Status của Lịch khám) */
+            .wp-list-table .post-state {
+                font-size: 11px !important;
+                font-weight: 800 !important;
+                padding: 4px 8px !important;
+                border-radius: 6px !important;
+                text-transform: uppercase;
+            }
+            
+            /* Tùy chỉnh phân trang bên dưới bảng */
+            .tablenav-pages {
+                font-size: 13px !important;
+                font-weight: 600 !important;
+                color: #64748b !important;
+            }
+            .tablenav-pages .paging-input {
+                font-weight: 400 !important;
+            }
+            .tablenav-pages a {
+                background: #fff !important;
+                border: 1px solid #cbd5e1 !important;
+                padding: 4px 10px !important;
+                border-radius: 6px !important;
+                color: #475569 !important;
+                text-decoration: none !important;
+                display: inline-block;
+            }
+            .tablenav-pages a:hover {
+                background: #f1f5f9 !important;
+            }
+        </style>
+        <?php
+    }
+}
 ?>
