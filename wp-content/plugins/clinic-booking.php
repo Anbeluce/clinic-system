@@ -302,7 +302,6 @@ function clinic_booking_form_shortcode() {
             $message .= "- Họ tên bệnh nhân: " . $patient_name . " (" . $patient_gender . ", sinh ngày: " . $patient_dob . ")\n";
             $message .= "- Số điện thoại liên hệ: " . $patient_phone . "\n";
             $message .= "- Triệu chứng/Ghi chú: " . $symptoms . "\n\n";
-            $message .= "Vui lòng giữ điện thoại, bộ phận Lễ tân của chúng tôi sẽ sớm liên hệ lại để chốt giờ khám chính xác cho bạn.\n\n";
             $message .= "Trân trọng,\nHệ thống Phòng khám";
 
             // Xây dựng nội dung (text) chung để gửi cho Webhook
@@ -8894,7 +8893,7 @@ function cb_generate_ics_feed() {
     $ics .= "PRODID:-//Clinic System//Booking Calendar//VI\r\n";
     $ics .= "CALSCALE:GREGORIAN\r\n";
     $ics .= "METHOD:PUBLISH\r\n";
-    $ics .= "X-WR-CALNAME:Lich Kham Benh (" . $user->display_name . ")\r\n";
+    $ics .= "X-WR-CALNAME:Lịch khám bệnh (" . $user->display_name . ")\r\n";
     $ics .= "X-WR-TIMEZONE:Asia/Ho_Chi_Minh\r\n";
 
     if ($query->have_posts()) {
@@ -8945,28 +8944,26 @@ function cb_generate_ics_feed() {
             $raw_symptoms = get_post_field('post_content', $post_id);
             $symptoms = str_replace('Triệu chứng: ', '', $raw_symptoms);
 
-            $description = "Bac si: " . $doctor . "\\n";
-            $description .= "Chuyen khoa: " . $specialty . "\\n";
-            $description .= "Benh nhan: " . $patient . " (SDT: " . $phone . ")\\n";
-            if (!empty($symptoms)) {
-                $description .= "Trieu chung: " . str_replace(array("\r", "\n"), " ", $symptoms) . "\\n";
+            // Bố cục phần mô tả: hiển thị Triệu chứng trước, các thông tin khác ở dưới, có đầy đủ dấu tiếng Việt
+            $description = "Triệu chứng: " . (!empty($symptoms) ? str_replace(array("\r", "\n"), " ", $symptoms) : "Không khai báo") . "\\n";
+            $description .= "Bác sĩ: " . $doctor . "\\n";
+            $description .= "Chuyên khoa: " . $specialty . "\\n";
+            $description .= "Bệnh nhân: " . $patient . " (SĐT: " . $phone . ")\\n";
+            if (!empty($clinic)) {
+                $description .= "Chi nhánh: " . $clinic . "\\n";
             }
             $reject_reason = get_post_meta($post_id, '_reject_reason', true);
             if (!empty($reject_reason)) {
-                $description .= "Ly do tu choi: " . $reject_reason . "\\n";
+                $description .= "Lý do từ chối: " . $reject_reason . "\\n";
             }
 
-            $summary = "Lich hen: " . $doctor . " - " . $patient;
+            // Tiêu đề lịch hẹn dạng: Bệnh nhân: xxx - Bác sĩ: xxx có dấu đầy đủ
+            $summary = "Bệnh nhân: " . $patient . " - Bác sĩ: " . $doctor;
 
             // Xử lý loại bỏ ký tự đặc biệt theo chuẩn ICS RFC 5545
             $summary = str_replace(array(',', ';'), array('\,', '\;'), $summary);
             $description = str_replace(array(',', ';'), array('\,', '\;'), $description);
             $clinic = str_replace(array(',', ';'), array('\,', '\;'), $clinic);
-
-            // Bỏ dấu tiếng Việt để hiển thị tốt nhất trên mọi loại Lịch thiết bị (tránh lỗi font ở một số dòng máy cổ)
-            $summary = cb_remove_vietnamese_accents($summary);
-            $description = cb_remove_vietnamese_accents($description);
-            $clinic = cb_remove_vietnamese_accents($clinic);
 
             $ics .= "BEGIN:VEVENT\r\n";
             $ics .= "UID:appointment-" . $post_id . "@clinic-system\r\n";
