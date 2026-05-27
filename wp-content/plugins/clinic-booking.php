@@ -3751,6 +3751,13 @@ function clinic_booking_history_shortcode() {
     wp_enqueue_script('flatpickr-js', 'https://cdn.jsdelivr.net/npm/flatpickr', array(), null, true);
 
     $current_user_id = get_current_user_id();
+
+    // Khởi tạo hoặc lấy token ICS bảo mật cho người dùng
+    $ics_token = get_user_meta($current_user_id, '_cb_ics_token', true);
+    if (empty($ics_token)) {
+        $ics_token = bin2hex(random_bytes(16));
+        update_user_meta($current_user_id, '_cb_ics_token', $ics_token);
+    }
     $args = array(
         'post_type'      => 'appointment',
         'post_status'    => array('pending', 'publish', 'draft', 'private', 'completed'),
@@ -3761,13 +3768,88 @@ function clinic_booking_history_shortcode() {
     );
     $query = new WP_Query($args);
 
+    // Chuẩn bị dữ liệu cho Lịch
+    $calendar_data = array();
+    if ( $query->have_posts() ) {
+        while ( $query->have_posts() ) {
+            $query->the_post();
+            $post_id = get_the_ID();
+            $status = get_post_status();
+            $booking_date = get_post_meta($post_id, '_booking_date', true);
+            $booking_time = get_post_meta($post_id, '_booking_time', true);
+            $doctor = get_post_meta($post_id, '_selected_doctor', true);
+            $doctor_id = get_post_meta($post_id, '_doctor_id', true);
+            $specialty = get_post_meta($post_id, '_specialty', true);
+            $p_name = get_post_meta($post_id, '_patient_name', true);
+            
+            $status_label = 'Chờ xác nhận';
+            $status_class = 'status-pending';
+            if ($status == 'publish') {
+                $status_label = 'Đã xác nhận';
+                $status_class = 'status-confirmed';
+            } elseif ($status == 'completed') {
+                $status_label = 'Đã khám xong';
+                $status_class = 'status-completed';
+            } elseif ($status == 'private') {
+                $status_label = 'Đã từ chối';
+                $status_class = 'status-rejected';
+            } elseif ($status == 'draft') {
+                $status_label = 'Đã hủy';
+                $status_class = 'status-cancelled';
+            }
+
+            $modify_check = cb_can_modify_appointment($post_id);
+            $can_modify = !is_wp_error($modify_check);
+            $modify_error = is_wp_error($modify_check) ? $modify_check->get_error_message() : '';
+
+            $has_review = get_post_meta($post_id, '_has_review', true) ? true : false;
+            $medical_notes = get_post_meta($post_id, '_medical_notes', true);
+            $raw_symptoms = get_post_field('post_content', $post_id);
+            $clean_symptoms = str_replace('Triệu chứng: ', '', $raw_symptoms);
+
+            $calendar_data[] = array(
+                'id' => $post_id,
+                'date' => $booking_date,
+                'time' => $booking_time,
+                'doctor' => $doctor,
+                'doctor_id' => $doctor_id,
+                'specialty' => $specialty,
+                'patient' => $p_name,
+                'status' => $status,
+                'status_label' => $status_label,
+                'status_class' => $status_class,
+                'can_modify' => $can_modify,
+                'modify_error' => $modify_error,
+                'has_review' => $has_review,
+                'medical_notes' => $medical_notes,
+                'symptoms' => $clean_symptoms
+            );
+        }
+        $query->rewind_posts();
+    }
+
     ob_start();
     ?>
     <div class="clinic-history-container">
         <h3 style="color: #1a365d; font-weight: 800; text-transform: uppercase; border-bottom: 3px solid #005086; padding-bottom: 10px; display: inline-block; margin-bottom: 30px;">Lịch sử đặt lịch</h3>
         
         <?php if ( $query->have_posts() ) : ?>
-            <div style="overflow-x: auto;">
+            
+            <div class="cb-history-view-switcher">
+                <button type="button" class="cb-view-btn active" data-view="table">
+                    <i class="fas fa-list"></i> Danh sách
+                </button>
+                <button type="button" class="cb-view-btn" data-view="calendar">
+                    <i class="fas fa-calendar-alt"></i> Lịch tháng
+                </button>
+            </div>
+
+            <script>
+                var cbCalendarData = <?php echo wp_json_encode($calendar_data); ?>;
+            </script>
+
+            <div id="cb-table-view" class="cb-history-view-content">
+                <div style="overflow-x: auto;">
                 <table class="clinic-history-table">
                     <thead>
                         <tr>
@@ -3873,6 +3955,62 @@ function clinic_booking_history_shortcode() {
                         <?php endwhile; wp_reset_postdata(); ?>
                     </tbody>
                 </table>
+            </div>
+            </div> <!-- Close #cb-table-view -->
+
+            <!-- Chế độ xem Lịch tháng (Calendar View) -->
+            <div id="cb-calendar-view" class="cb-history-view-content" style="display: none;">
+                <div class="cb-calendar-wrapper">
+                    <div class="cb-calendar-header">
+                        <div class="cb-calendar-nav">
+                            <button type="button" id="cb-cal-prev" class="cb-cal-nav-btn"><i class="fas fa-chevron-left"></i></button>
+                            <span id="cb-cal-month-year" class="cb-cal-title">...</span>
+                            <button type="button" id="cb-cal-next" class="cb-cal-nav-btn"><i class="fas fa-chevron-right"></i></button>
+                        </div>
+                        <div class="cb-calendar-actions">
+                            <div class="cb-dropdown">
+                                <button type="button" class="cb-dropdown-toggle" style="background: #005086; color: #fff; border: none; padding: 8px 16px; border-radius: 8px; font-weight: 700; font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; transition: all 0.2s;">
+                                    <i class="fas fa-calendar-plus"></i> Đăng ký Lịch <i class="fas fa-chevron-down" style="font-size: 10px;"></i>
+                                </button>
+                                <ul class="cb-dropdown-menu">
+                                    <li><a href="#" id="cb-ics-copy-link" data-link="<?php echo esc_url( home_url('/lich-su/ics/?token=' . $ics_token) ); ?>"><i class="far fa-copy"></i> Sao chép link đăng ký</a></li>
+                                    <li><a href="<?php echo esc_url( str_replace(array('http://', 'https://'), 'webcal://', home_url('/lich-su/ics/?token=' . $ics_token)) ); ?>"><i class="fab fa-apple"></i> Thêm vào Apple Calendar</a></li>
+                                    <li><a href="<?php echo esc_url( home_url('/lich-su/ics/?token=' . $ics_token) ); ?>" download="lich-kham.ics"><i class="fas fa-download"></i> Tải file .ics</a></li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="cb-calendar-weekdays">
+                        <div class="cb-weekday">CN</div>
+                        <div class="cb-weekday">T2</div>
+                        <div class="cb-weekday">T3</div>
+                        <div class="cb-weekday">T4</div>
+                        <div class="cb-weekday">T5</div>
+                        <div class="cb-weekday">T6</div>
+                        <div class="cb-weekday">T7</div>
+                    </div>
+                    <div class="cb-calendar-grid" id="cb-calendar-grid">
+                        <!-- JS renders dates here -->
+                    </div>
+                </div>
+                <div class="cb-calendar-legend">
+                    <span class="legend-item"><span class="legend-dot status-pending"></span> Chờ xác nhận</span>
+                    <span class="legend-item"><span class="legend-dot status-confirmed"></span> Đã xác nhận</span>
+                    <span class="legend-item"><span class="legend-dot status-completed"></span> Đã khám xong</span>
+                    <span class="legend-item"><span class="legend-dot status-rejected"></span> Đã từ chối</span>
+                    <span class="legend-item"><span class="legend-dot status-cancelled"></span> Đã hủy</span>
+                </div>
+            </div>
+
+            <!-- Popup Chi tiết lịch hẹn trong ngày -->
+            <div id="cb-day-popup" class="cb-day-popup" style="display: none;">
+                <div class="cb-day-popup-header">
+                    <span class="cb-day-popup-title"><i class="far fa-calendar-check"></i> Lịch hẹn ngày <span id="cb-popup-date-title">--/--/----</span></span>
+                    <span class="cb-day-popup-close">&times;</span>
+                </div>
+                <div id="cb-day-popup-body" class="cb-day-popup-body">
+                    <!-- Loaded dynamically via JS -->
+                </div>
             </div>
 
             <!-- Modal: Đổi lịch hẹn -->
@@ -3989,7 +4127,7 @@ function clinic_booking_history_shortcode() {
         <?php endif; ?>
     </div>
     <style>
-        .clinic-history-container { max-width: 1000px; margin: 40px auto; padding: 40px; background: #fff; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.05); }
+        .clinic-history-container { max-width: 1000px; margin: 40px auto; padding: 40px; background: #fff; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.05); position: relative; }
         .clinic-history-table { width: 100%; border-collapse: collapse; min-width: 600px; }
         .clinic-history-table th { text-align: left; padding: 15px; background: #f8fafc; color: #4a5568; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; border-bottom: 2px solid #edf2f7; }
         .clinic-history-table td { padding: 20px 15px; border-bottom: 1px solid #f0f4f8; vertical-align: middle; }
@@ -3999,7 +4137,400 @@ function clinic_booking_history_shortcode() {
         .status-completed { background: #e0f2fe; color: #0369a1; }
         .status-rejected { background: #fee2e2; color: #991b1b; }
         .status-cancelled { background: #edf2f7; color: #4a5568; }
-        @media (max-width: 600px) { .clinic-history-container { padding: 20px; } }
+        
+        /* Dropdown Đăng ký lịch */
+        .cb-dropdown {
+            position: relative;
+            display: inline-block;
+        }
+        .cb-dropdown-toggle {
+            transition: all 0.2s ease;
+        }
+        .cb-dropdown-toggle:hover {
+            background: #003e6b !important;
+            transform: translateY(-1px);
+        }
+        .cb-dropdown-menu {
+            display: none;
+            position: absolute;
+            right: 0;
+            top: calc(100% + 6px);
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            min-width: 240px;
+            z-index: 1010;
+            padding: 8px 0;
+            margin: 0;
+            list-style: none;
+            animation: cbDropdownFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        @keyframes cbDropdownFadeIn {
+            from { opacity: 0; transform: translateY(5px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .cb-dropdown-menu li {
+            margin: 0;
+            padding: 0;
+        }
+        .cb-dropdown-menu li a {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 16px;
+            color: #4a5568 !important;
+            text-decoration: none !important;
+            font-size: 13.5px;
+            font-weight: 600;
+            transition: all 0.15s ease;
+            box-shadow: none !important;
+        }
+        .cb-dropdown-menu li a:hover {
+            background: #f8fafc;
+            color: #005086 !important;
+        }
+        .cb-dropdown.open .cb-dropdown-menu {
+            display: block;
+        }
+
+        /* View Switcher styles */
+        .cb-history-view-switcher {
+            display: inline-flex;
+            background: #f1f5f9;
+            padding: 4px;
+            border-radius: 12px;
+            margin-bottom: 24px;
+            border: 1px solid #e2e8f0;
+        }
+        .cb-view-btn {
+            background: transparent;
+            border: none;
+            padding: 8px 18px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            color: #64748b;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .cb-view-btn i {
+            font-size: 14px;
+        }
+        .cb-view-btn:hover {
+            color: #0f172a;
+        }
+        .cb-view-btn.active {
+            background: #ffffff;
+            color: #005086;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -1px rgba(0, 0, 0, 0.04);
+        }
+
+        /* Calendar wrapper styles */
+        .cb-calendar-wrapper {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.02);
+            font-family: inherit;
+        }
+        .cb-calendar-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 24px;
+            border-bottom: 1px solid #edf2f7;
+            background: #fafafa;
+        }
+        .cb-calendar-nav {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        .cb-cal-nav-btn {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            width: 38px;
+            height: 38px;
+            border-radius: 10px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            color: #4a5568;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .cb-cal-nav-btn:hover {
+            background: #f7fafc;
+            color: #005086;
+            border-color: #cbd5e0;
+        }
+        .cb-cal-title {
+            font-size: 16px;
+            font-weight: 700;
+            color: #1a365d;
+            min-width: 140px;
+            text-align: center;
+            user-select: none;
+        }
+        .cb-calendar-weekdays {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            background: #f8fafc;
+            border-bottom: 1px solid #edf2f7;
+            text-align: center;
+            user-select: none;
+        }
+        .cb-weekday {
+            padding: 14px 0;
+            font-size: 12px;
+            font-weight: 700;
+            color: #718096;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .cb-calendar-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            background: #e2e8f0;
+            gap: 1px;
+        }
+        .cb-calendar-day {
+            background: #ffffff;
+            min-height: 110px;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            position: relative;
+            transition: background-color 0.2s ease;
+        }
+        .cb-calendar-day:not(.other-month):hover {
+            background: #f8fafc;
+        }
+        .cb-day-num {
+            font-size: 14px;
+            font-weight: 600;
+            color: #4a5568;
+            width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            user-select: none;
+        }
+        .cb-calendar-day.today .cb-day-num {
+            background: #005086;
+            color: #ffffff;
+            font-weight: 700;
+        }
+        .cb-calendar-day.other-month {
+            background: #f8fafc;
+        }
+        .cb-calendar-day.other-month .cb-day-num {
+            color: #cbd5e0;
+        }
+        .cb-day-dots {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            margin-top: 8px;
+            justify-content: flex-start;
+        }
+        .cb-calendar-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+        .cb-calendar-dot.status-pending { background-color: #ecc94b; }
+        .cb-calendar-dot.status-confirmed { background-color: #48bb78; }
+        .cb-calendar-dot.status-completed { background-color: #4299e1; }
+        .cb-calendar-dot.status-rejected { background-color: #f56565; }
+        .cb-calendar-dot.status-cancelled { background-color: #a0aec0; }
+
+        .cb-calendar-day.has-appointments {
+            cursor: pointer;
+        }
+        .cb-calendar-day.has-appointments:not(.other-month):hover {
+            background: #f0f7ff;
+        }
+
+        /* Calendar Legend */
+        .cb-calendar-legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+            margin-top: 20px;
+            padding: 0 8px;
+        }
+        .legend-item {
+            font-size: 13px;
+            color: #718096;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-weight: 500;
+        }
+        .legend-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+        .legend-dot.status-pending { background-color: #ecc94b; }
+        .legend-dot.status-confirmed { background-color: #48bb78; }
+        .legend-dot.status-completed { background-color: #4299e1; }
+        .legend-dot.status-rejected { background-color: #f56565; }
+        .legend-dot.status-cancelled { background-color: #a0aec0; }
+
+        /* Day Detail Popup Styles */
+        .cb-day-popup {
+            position: absolute;
+            z-index: 1000;
+            background: #ffffff;
+            border-radius: 16px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+            border: 1px solid #e2e8f0;
+            width: 320px;
+            max-height: 400px;
+            overflow-y: auto;
+            animation: cbPopupFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+            font-family: inherit;
+        }
+        @keyframes cbPopupFadeIn {
+            from { opacity: 0; transform: scale(0.95) translateY(5px); }
+            to { opacity: 1; transform: scale(1) translateY(0); }
+        }
+        .cb-day-popup-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            border-bottom: 1px solid #edf2f7;
+            background: #fafafa;
+            position: sticky;
+            top: 0;
+            z-index: 1;
+        }
+        .cb-day-popup-title {
+            font-size: 13px;
+            font-weight: 700;
+            color: #1a365d;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .cb-day-popup-close {
+            color: #a0aec0;
+            font-size: 22px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: color 0.2s;
+            line-height: 1;
+        }
+        .cb-day-popup-close:hover {
+            color: #e53e3e;
+        }
+        .cb-day-popup-body {
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .cb-popup-appointment-card {
+            background: #f8fafc;
+            border-radius: 10px;
+            padding: 12px;
+            border-left: 4px solid #cbd5e0;
+            border-top: 1px solid #edf2f7;
+            border-right: 1px solid #edf2f7;
+            border-bottom: 1px solid #edf2f7;
+        }
+        .cb-popup-appointment-card.status-pending { border-left-color: #ecc94b; }
+        .cb-popup-appointment-card.status-confirmed { border-left-color: #48bb78; }
+        .cb-popup-appointment-card.status-completed { border-left-color: #4299e1; }
+        .cb-popup-appointment-card.status-rejected { border-left-color: #f56565; }
+        .cb-popup-appointment-card.status-cancelled { border-left-color: #a0aec0; }
+
+        .cb-popup-time-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 11px;
+            font-weight: 700;
+            color: #4a5568;
+            background: #edf2f7;
+            padding: 3px 8px;
+            border-radius: 50px;
+            margin-bottom: 8px;
+        }
+        .cb-popup-doc-name {
+            font-size: 14px;
+            font-weight: 700;
+            color: #005086;
+            margin-bottom: 2px;
+        }
+        .cb-popup-specialty {
+            font-size: 12px;
+            color: #4a5568;
+            margin-bottom: 6px;
+        }
+        .cb-popup-patient-name {
+            font-size: 12px;
+            color: #718096;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .cb-popup-actions {
+            display: flex;
+            gap: 6px;
+            margin-top: 10px;
+            flex-wrap: wrap;
+        }
+        .cb-popup-btn {
+            padding: 6px 10px;
+            font-size: 11px;
+            font-weight: 700;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            color: #ffffff;
+        }
+        .cb-popup-btn.btn-reschedule { background: #3182ce; }
+        .cb-popup-btn.btn-cancel { background: #e53e3e; }
+        .cb-popup-btn.btn-notes { background: #3ca5dd; }
+        .cb-popup-btn.btn-review { background: #dd6b20; }
+        .cb-popup-btn:hover {
+            opacity: 0.9;
+        }
+        .cb-popup-status-text {
+            font-size: 11px;
+            font-weight: 700;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 2px 0;
+        }
+        .cb-popup-status-text.status-completed { color: #38a169; }
+        .cb-popup-status-text.status-cancelled { color: #718096; }
+        .cb-popup-status-text.status-rejected { color: #e53e3e; }
+
+        @media (max-width: 768px) {
+            .clinic-history-container { padding: 20px; }
+            .cb-calendar-day { min-height: 80px; padding: 6px; }
+            .cb-day-popup { width: 280px; }
+        }
 
         /* Modal Styles */
         .cb-modal { display: none; position: fixed; z-index: 9999; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.5); align-items: center; justify-content: center; backdrop-filter: blur(4px); transition: all 0.3s ease; font-family: inherit; }
@@ -4030,6 +4561,248 @@ function clinic_booking_history_shortcode() {
             var ajaxurl = '<?php echo esc_url( admin_url('admin-ajax.php') ); ?>';
             var reschedulePicker = null;
 
+            // --- LẬP TRÌNH BỘ LỊCH THÁNG (CALENDAR VIEW) ---
+            var today = new Date();
+            var currentYear = today.getFullYear();
+            var currentMonth = today.getMonth(); // 0 - 11
+
+            // Chuyển đổi qua lại giữa Tab Danh sách & Lịch tháng
+            $('.cb-view-btn').on('click', function(e) {
+                e.preventDefault();
+                var view = $(this).data('view');
+                $('.cb-view-btn').removeClass('active');
+                $(this).addClass('active');
+
+                $('.cb-history-view-content').hide();
+                if (view === 'table') {
+                    $('#cb-table-view').show();
+                    $('#cb-day-popup').hide();
+                } else {
+                    $('#cb-calendar-view').show();
+                    renderCalendar(currentYear, currentMonth);
+                }
+            });
+
+            // Hàm render Lịch tháng
+            function renderCalendar(year, month) {
+                var monthNames = ["Tháng 1", "Tháng 2", "Tháng 3", "Tháng 4", "Tháng 5", "Tháng 6", "Tháng 7", "Tháng 8", "Tháng 9", "Tháng 10", "Tháng 11", "Tháng 12"];
+                $('#cb-cal-month-year').text(monthNames[month] + ', ' + year);
+
+                var firstDay = new Date(year, month, 1).getDay(); // Thứ của ngày đầu tiên (0 = Chủ Nhật)
+                var daysInMonth = new Date(year, month + 1, 0).getDate();
+
+                // Lấy thông tin tháng trước để làm đệm (padding)
+                var prevMonthYear = month === 0 ? year - 1 : year;
+                var prevMonth = month === 0 ? 11 : month - 1;
+                var daysInPrevMonth = new Date(prevMonthYear, prevMonth + 1, 0).getDate();
+
+                var gridHtml = '';
+
+                // Thêm đệm của tháng trước
+                for (var i = firstDay - 1; i >= 0; i--) {
+                    var dayNum = daysInPrevMonth - i;
+                    gridHtml += '<div class="cb-calendar-day other-month">' +
+                                '<span class="cb-day-num">' + dayNum + '</span>' +
+                                '</div>';
+                }
+
+                // Vẽ các ngày trong tháng hiện tại
+                for (var day = 1; day <= daysInMonth; day++) {
+                    var dayStr = ('0' + day).slice(-2);
+                    var monthStr = ('0' + (month + 1)).slice(-2);
+                    var dateStr = dayStr + '/' + monthStr + '/' + year;
+
+                    var isToday = (day === today.getDate() && month === today.getMonth() && year === today.getFullYear());
+                    var todayClass = isToday ? ' today' : '';
+
+                    // Lọc các lịch hẹn trùng với ngày này
+                    var appointments = cbCalendarData.filter(function(app) {
+                        return app.date === dateStr;
+                    });
+
+                    var hasAppsClass = appointments.length > 0 ? ' has-appointments' : '';
+                    var dotsHtml = '';
+
+                    if (appointments.length > 0) {
+                        dotsHtml += '<div class="cb-day-dots">';
+                        var visibleApps = appointments.slice(0, 3);
+                        visibleApps.forEach(function(app) {
+                            dotsHtml += '<span class="cb-calendar-dot ' + app.status_class + '" title="' + app.time + ' - ' + app.doctor + ' (' + app.status_label + ')"></span>';
+                        });
+                        if (appointments.length > 3) {
+                            dotsHtml += '<span style="font-size: 8px; font-weight: 700; color: #718096; line-height: 1;">+' + (appointments.length - 3) + '</span>';
+                        }
+                        dotsHtml += '</div>';
+                    }
+
+                    gridHtml += '<div class="cb-calendar-day' + todayClass + hasAppsClass + '" data-date="' + dateStr + '">' +
+                                '<span class="cb-day-num">' + day + '</span>' +
+                                dotsHtml +
+                                '</div>';
+                }
+
+                // Thêm đệm của tháng sau để hoàn tất tuần cuối cùng
+                var totalCells = firstDay + daysInMonth;
+                var nextMonthPadding = (7 - (totalCells % 7)) % 7;
+                for (var day = 1; day <= nextMonthPadding; day++) {
+                    gridHtml += '<div class="cb-calendar-day other-month">' +
+                                '<span class="cb-day-num">' + day + '</span>' +
+                                '</div>';
+                }
+
+                $('#cb-calendar-grid').html(gridHtml);
+            }
+
+            // Sự kiện điều hướng lịch ◄ / ►
+            $('#cb-cal-prev').on('click', function(e) {
+                e.preventDefault();
+                currentMonth--;
+                if (currentMonth < 0) {
+                    currentMonth = 11;
+                    currentYear--;
+                }
+                renderCalendar(currentYear, currentMonth);
+                $('#cb-day-popup').hide();
+            });
+
+            $('#cb-cal-next').on('click', function(e) {
+                e.preventDefault();
+                currentMonth++;
+                if (currentMonth > 11) {
+                    currentMonth = 0;
+                    currentYear++;
+                }
+                renderCalendar(currentYear, currentMonth);
+                $('#cb-day-popup').hide();
+            });
+
+            // Sự kiện bấm vào một ngày có lịch hẹn
+            $(document).on('click', '.cb-calendar-day.has-appointments', function(e) {
+                e.stopPropagation();
+                var dateStr = $(this).data('date');
+                var appointments = cbCalendarData.filter(function(app) {
+                    return app.date === dateStr;
+                });
+
+                if (appointments.length === 0) return;
+
+                $('#cb-popup-date-title').text(dateStr);
+
+                var bodyHtml = '';
+                appointments.forEach(function(app) {
+                    var actionButtons = '';
+                    if (app.can_modify) {
+                        actionButtons = '<div class="cb-popup-actions">' +
+                                        '<button type="button" class="cb-popup-btn btn-reschedule cb-patient-reschedule-btn" data-id="' + app.id + '" data-doctor-id="' + app.doctor_id + '" data-date="' + app.date + '" data-time="' + app.time + '"><i class="fas fa-calendar-alt"></i> Đổi lịch</button>' +
+                                        '<button type="button" class="cb-popup-btn btn-cancel cb-patient-cancel-btn" data-id="' + app.id + '"><i class="fas fa-trash-alt"></i> Hủy</button>' +
+                                        '</div>';
+                    } else {
+                        if (app.status === 'completed') {
+                            var completedActions = '<div class="cb-popup-actions">';
+                            if (app.medical_notes) {
+                                completedActions += '<button type="button" class="cb-popup-btn btn-notes cb-patient-view-notes-btn" data-id="' + app.id + '" data-doctor="' + app.doctor + '" data-date="' + app.date + '" data-symptoms="' + app.symptoms + '" data-notes="' + app.medical_notes + '"><i class="fas fa-file-medical"></i> Kết quả</button>';
+                            }
+                            if (!app.has_review) {
+                                completedActions += '<button type="button" class="cb-popup-btn btn-review cb-patient-review-btn" data-id="' + app.id + '" data-doctor="' + app.doctor + '"><i class="fas fa-star"></i> Đánh giá</button>';
+                            } else {
+                                completedActions += '<span class="cb-popup-status-text status-completed"><i class="fas fa-check-circle"></i> Đã đánh giá</span>';
+                            }
+                            completedActions += '</div>';
+                            actionButtons = completedActions;
+                        } else {
+                            var labelStyle = '';
+                            if (app.status === 'private') {
+                                labelStyle = 'cb-popup-status-text status-rejected';
+                            } else if (app.status === 'draft') {
+                                labelStyle = 'cb-popup-status-text status-cancelled';
+                            } else {
+                                labelStyle = 'cb-popup-status-text';
+                            }
+                            actionButtons = '<div style="margin-top: 8px;"><span class="' + labelStyle + '"><i class="fas fa-lock"></i> Đã khóa (' + app.status_label + ')</span></div>';
+                        }
+                    }
+
+                    bodyHtml += '<div class="cb-popup-appointment-card status-' + app.status + '">' +
+                                '<div class="cb-popup-time-badge"><i class="far fa-clock"></i> ' + app.time + '</div>' +
+                                '<div class="cb-popup-doc-name">' + app.doctor + '</div>' +
+                                '<div class="cb-popup-specialty">' + app.specialty + '</div>' +
+                                '<div class="cb-popup-patient-name"><i class="far fa-user"></i> Bệnh nhân: ' + app.patient + '</div>' +
+                                actionButtons +
+                                '</div>';
+                });
+
+                $('#cb-day-popup-body').html(bodyHtml);
+
+                // Định vị popup tuyệt đối
+                var offset = $(this).offset();
+                var cellHeight = $(this).outerHeight();
+                var cellWidth = $(this).outerWidth();
+                var popupWidth = $('#cb-day-popup').outerWidth() || 320;
+                
+                var popupLeft = offset.left + cellWidth / 2 - popupWidth / 2;
+                var popupTop = offset.top + cellHeight + 6;
+
+                // Kiểm tra giới hạn màn hình
+                var containerWidth = $('.clinic-history-container').outerWidth();
+                var containerOffset = $('.clinic-history-container').offset();
+                
+                if (popupLeft < containerOffset.left + 16) {
+                    popupLeft = containerOffset.left + 16;
+                } else if (popupLeft + popupWidth > containerOffset.left + containerWidth - 16) {
+                    popupLeft = containerOffset.left + containerWidth - popupWidth - 16;
+                }
+
+                var relativeLeft = popupLeft - containerOffset.left;
+                var relativeTop = popupTop - containerOffset.top;
+
+                $('#cb-day-popup').css({
+                    top: relativeTop + 'px',
+                    left: relativeLeft + 'px',
+                    display: 'block'
+                });
+            });
+
+            // Sự kiện đóng popup
+            $(document).on('click', '.cb-day-popup-close', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                $('#cb-day-popup').hide();
+            });
+
+            // Đóng popup khi click ngoài lịch
+            $(document).on('click', function(e) {
+                if (!$(e.target).closest('#cb-day-popup').length && !$(e.target).closest('.cb-calendar-day').length) {
+                    $('#cb-day-popup').hide();
+                }
+            });
+
+            // --- LẬP TRÌNH DROPDOWN ĐĂNG KÝ LỊCH ---
+            $(document).on('click', '.cb-dropdown-toggle', function(e) {
+                e.stopPropagation();
+                $(this).parent('.cb-dropdown').toggleClass('open');
+            });
+
+            $(document).on('click', function(e) {
+                if (!$(e.target).closest('.cb-dropdown').length) {
+                    $('.cb-dropdown').removeClass('open');
+                }
+            });
+
+            $(document).on('click', '#cb-ics-copy-link', function(e) {
+                e.preventDefault();
+                var link = $(this).data('link');
+                
+                var $temp = $("<input>");
+                $("body").append($temp);
+                $temp.val(link).select();
+                document.execCommand("copy");
+                $temp.remove();
+
+                alert('Đã sao chép link đăng ký lịch thành công!\n\nBạn có thể dán link này vào Google Calendar (chọn mục "Thêm từ URL" trong cài đặt lịch của Google) hoặc các phần mềm lịch khác để đồng bộ tự động.');
+                $('.cb-dropdown').removeClass('open');
+            });
+
+            // --- CÁC SỰ KIỆN XỬ LÝ LỊCH HẸN CÓ SẴN ---
             // Mở modal Đổi lịch
             $(document).on('click', '.cb-patient-reschedule-btn', function() {
                 var appId = $(this).data('id');
@@ -4613,6 +5386,401 @@ function cb_print_doctor_dashboard_shared_css() {
         .dd-nav-item { display: inline-flex; align-items: center; gap: 8px; padding: 12px 24px; border-radius: 12px; font-weight: 700; text-decoration: none !important; font-size: 15px; transition: all 0.2s; color: #718096; background: transparent; }
         .dd-nav-item:hover { color: #2b6cb0; background: #f7fafc; }
         .dd-nav-item.active { color: #2b6cb0; background: #ebf8ff; }
+        
+        /* Dropdown Đăng ký lịch */
+        .cb-dropdown {
+            position: relative;
+            display: inline-block;
+        }
+        .cb-dropdown-toggle {
+            transition: all 0.2s ease;
+        }
+        .cb-dropdown-toggle:hover {
+            background: #003e6b !important;
+            transform: translateY(-1px);
+        }
+        .cb-dropdown-menu {
+            display: none;
+            position: absolute;
+            right: 0;
+            top: calc(100% + 6px);
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            min-width: 240px;
+            z-index: 1010;
+            padding: 8px 0;
+            margin: 0;
+            list-style: none;
+            text-align: left;
+            animation: cbDropdownFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        @keyframes cbDropdownFadeIn {
+            from { opacity: 0; transform: translateY(5px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .cb-dropdown-menu li {
+            margin: 0;
+            padding: 0;
+        }
+        .cb-dropdown-menu li a {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 16px;
+            color: #4a5568 !important;
+            text-decoration: none !important;
+            font-size: 13.5px;
+            font-weight: 600;
+            transition: all 0.15s ease;
+            box-shadow: none !important;
+        }
+        .cb-dropdown-menu li a:hover {
+            background: #f8fafc;
+            color: #005086 !important;
+        }
+        .cb-dropdown.open .cb-dropdown-menu {
+            display: block;
+        }
+
+        /* View Switcher styles */
+        .cb-history-view-switcher {
+            display: inline-flex;
+            background: #f1f5f9;
+            padding: 4px;
+            border-radius: 12px;
+            margin-bottom: 24px;
+            border: 1px solid #e2e8f0;
+        }
+        .cb-view-btn {
+            background: transparent;
+            border: none;
+            padding: 8px 18px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            color: #64748b;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .cb-view-btn i {
+            font-size: 14px;
+        }
+        .cb-view-btn:hover {
+            color: #0f172a;
+        }
+        .cb-view-btn.active {
+            background: #ffffff;
+            color: #005086;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -1px rgba(0, 0, 0, 0.04);
+        }
+
+        /* Calendar wrapper styles */
+        .cb-calendar-wrapper {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.02);
+            font-family: inherit;
+        }
+        .cb-calendar-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 24px;
+            border-bottom: 1px solid #edf2f7;
+            background: #fafafa;
+        }
+        .cb-calendar-nav {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        .cb-cal-nav-btn {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            width: 38px;
+            height: 38px;
+            border-radius: 10px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            color: #4a5568;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .cb-cal-nav-btn:hover {
+            background: #f7fafc;
+            color: #005086;
+            border-color: #cbd5e0;
+        }
+        .cb-cal-title {
+            font-size: 16px;
+            font-weight: 700;
+            color: #1a365d;
+            min-width: 140px;
+            text-align: center;
+            user-select: none;
+        }
+        .cb-calendar-weekdays {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            background: #f8fafc;
+            border-bottom: 1px solid #edf2f7;
+            text-align: center;
+            user-select: none;
+        }
+        .cb-weekday {
+            padding: 14px 0;
+            font-size: 12px;
+            font-weight: 700;
+            color: #718096;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .cb-calendar-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            background: #e2e8f0;
+            gap: 1px;
+        }
+        .cb-calendar-day {
+            background: #ffffff;
+            min-height: 110px;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            position: relative;
+            transition: background-color 0.2s ease;
+        }
+        .cb-calendar-day:not(.other-month):hover {
+            background: #f8fafc;
+        }
+        .cb-day-num {
+            font-size: 14px;
+            font-weight: 600;
+            color: #4a5568;
+            width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            user-select: none;
+        }
+        .cb-calendar-day.today .cb-day-num {
+            background: #005086;
+            color: #ffffff;
+            font-weight: 700;
+        }
+        .cb-calendar-day.other-month {
+            background: #f8fafc;
+        }
+        .cb-calendar-day.other-month .cb-day-num {
+            color: #cbd5e0;
+        }
+        .cb-day-dots {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            margin-top: 8px;
+            justify-content: flex-start;
+        }
+        .cb-calendar-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+        .cb-calendar-dot.status-pending { background-color: #ecc94b; }
+        .cb-calendar-dot.status-confirmed { background-color: #48bb78; }
+        .cb-calendar-dot.status-completed { background-color: #4299e1; }
+        .cb-calendar-dot.status-rejected { background-color: #f56565; }
+        .cb-calendar-dot.status-cancelled { background-color: #a0aec0; }
+
+        .cb-calendar-day.has-appointments {
+            cursor: pointer;
+        }
+        .cb-calendar-day.has-appointments:not(.other-month):hover {
+            background: #f0f7ff;
+        }
+
+        /* Calendar Legend */
+        .cb-calendar-legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+            margin-top: 20px;
+            padding: 0 8px;
+        }
+        .legend-item {
+            font-size: 13px;
+            color: #718096;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-weight: 500;
+        }
+        .legend-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+        .legend-dot.status-pending { background-color: #ecc94b; }
+        .legend-dot.status-confirmed { background-color: #48bb78; }
+        .legend-dot.status-completed { background-color: #4299e1; }
+        .legend-dot.status-rejected { background-color: #f56565; }
+        .legend-dot.status-cancelled { background-color: #a0aec0; }
+
+        /* Day Detail Popup Styles */
+        .cb-day-popup {
+            position: absolute;
+            z-index: 1000;
+            background: #ffffff;
+            border-radius: 16px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+            border: 1px solid #e2e8f0;
+            width: 320px;
+            max-height: 400px;
+            overflow-y: auto;
+            animation: cbPopupFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+            font-family: inherit;
+        }
+        @keyframes cbPopupFadeIn {
+            from { opacity: 0; transform: scale(0.95) translateY(5px); }
+            to { opacity: 1; transform: scale(1) translateY(0); }
+        }
+        .cb-day-popup-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            border-bottom: 1px solid #edf2f7;
+            background: #fafafa;
+            position: sticky;
+            top: 0;
+            z-index: 1;
+        }
+        .cb-day-popup-title {
+            font-size: 13px;
+            font-weight: 700;
+            color: #1a365d;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .cb-day-popup-close {
+            color: #a0aec0;
+            font-size: 22px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: color 0.2s;
+            line-height: 1;
+        }
+        .cb-day-popup-close:hover {
+            color: #e53e3e;
+        }
+        .cb-day-popup-body {
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            text-align: left;
+        }
+        .cb-popup-appointment-card {
+            background: #f8fafc;
+            border-radius: 10px;
+            padding: 12px;
+            border-left: 4px solid #cbd5e0;
+            border-top: 1px solid #edf2f7;
+            border-right: 1px solid #edf2f7;
+            border-bottom: 1px solid #edf2f7;
+        }
+        .cb-popup-appointment-card.status-pending { border-left-color: #ecc94b; }
+        .cb-popup-appointment-card.status-confirmed { border-left-color: #48bb78; }
+        .cb-popup-appointment-card.status-completed { border-left-color: #4299e1; }
+        .cb-popup-appointment-card.status-rejected { border-left-color: #f56565; }
+        .cb-popup-appointment-card.status-cancelled { border-left-color: #a0aec0; }
+
+        .cb-popup-time-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 11px;
+            font-weight: 700;
+            color: #4a5568;
+            background: #edf2f7;
+            padding: 3px 8px;
+            border-radius: 50px;
+            margin-bottom: 8px;
+        }
+        .cb-popup-doc-name {
+            font-size: 14px;
+            font-weight: 700;
+            color: #005086;
+            margin-bottom: 2px;
+        }
+        .cb-popup-specialty {
+            font-size: 12px;
+            color: #4a5568;
+            margin-bottom: 6px;
+        }
+        .cb-popup-patient-name {
+            font-size: 12px;
+            color: #718096;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .cb-popup-actions {
+            display: flex;
+            gap: 6px;
+            margin-top: 10px;
+            flex-wrap: wrap;
+        }
+        .cb-popup-btn {
+            padding: 6px 10px;
+            font-size: 11px;
+            font-weight: 700;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            color: #ffffff;
+        }
+        .cb-popup-btn.btn-reschedule { background: #3182ce; }
+        .cb-popup-btn.btn-cancel { background: #e53e3e; }
+        .cb-popup-btn.btn-notes { background: #3ca5dd; }
+        .cb-popup-btn.btn-review { background: #dd6b20; }
+        .cb-popup-btn:hover {
+            opacity: 0.9;
+        }
+        .cb-popup-status-text {
+            font-size: 11px;
+            font-weight: 700;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 2px 0;
+        }
+        .cb-popup-status-text.status-completed { color: #38a169; }
+        .cb-popup-status-text.status-cancelled { color: #718096; }
+        .cb-popup-status-text.status-rejected { color: #e53e3e; }
+
+        @media (max-width: 768px) {
+            .cb-calendar-day { min-height: 80px; padding: 6px; }
+            .cb-day-popup { width: 280px; }
+        }
     </style>
     <?php
 }
@@ -4715,6 +5883,62 @@ function doctor_dashboard_shortcode() {
                 $completed_count++;
             }
         }
+    }
+
+    // Chuẩn bị dữ liệu lịch hẹn cho Bác sĩ
+    $calendar_data = array();
+    if (!empty($appointments)) {
+        foreach ($appointments as $app) {
+            $patient_name = get_post_meta($app->ID, '_patient_name', true);
+            $patient_phone = get_post_meta($app->ID, '_patient_phone', true);
+            $booking_date = get_post_meta($app->ID, '_booking_date', true);
+            $booking_time = get_post_meta($app->ID, '_booking_time', true);
+            $symptoms = get_post_field('post_content', $app->ID);
+            $clean_symptoms = str_replace('Triệu chứng: ', '', $symptoms);
+            $status = $app->post_status;
+            
+            $status_label = 'Chờ xác nhận';
+            $status_class = 'status-pending';
+            if ($status == 'publish') {
+                $status_label = 'Đã xác nhận';
+                $status_class = 'status-confirmed';
+            } elseif ($status == 'completed') {
+                $status_label = 'Đã khám xong';
+                $status_class = 'status-completed';
+            } elseif ($status == 'private') {
+                $status_label = 'Đã từ chối';
+                $status_class = 'status-rejected';
+            } elseif ($status == 'draft') {
+                $status_label = 'Đã hủy';
+                $status_class = 'status-cancelled';
+            }
+
+            $medical_notes = get_post_meta($app->ID, '_medical_notes', true);
+            $reject_reason = get_post_meta($app->ID, '_reject_reason', true);
+
+            $calendar_data[] = array(
+                'id' => $app->ID,
+                'date' => $booking_date,
+                'time' => $booking_time,
+                'patient' => $patient_name,
+                'patient_phone' => $patient_phone,
+                'patient_gender' => get_post_meta($app->ID, '_patient_gender', true),
+                'patient_dob' => get_post_meta($app->ID, '_patient_dob', true),
+                'symptoms' => $clean_symptoms,
+                'status' => $status,
+                'status_label' => $status_label,
+                'status_class' => $status_class,
+                'medical_notes' => $medical_notes,
+                'reject_reason' => $reject_reason
+            );
+        }
+    }
+
+    // Đảm bảo bác sĩ có token ICS bảo mật
+    $ics_token = get_user_meta($current_user_id, '_cb_ics_token', true);
+    if (empty($ics_token)) {
+        $ics_token = bin2hex(random_bytes(16));
+        update_user_meta($current_user_id, '_cb_ics_token', $ics_token);
     }
 
     ob_start();
@@ -4850,6 +6074,21 @@ function doctor_dashboard_shortcode() {
             </div>
         </div>
 
+        <!-- Chuyển đổi chế độ xem cho Bác sĩ -->
+        <div class="cb-history-view-switcher" style="margin-bottom: 20px;">
+            <button type="button" class="cb-view-btn active" data-view="table">
+                <i class="fas fa-list"></i> Danh sách
+            </button>
+            <button type="button" class="cb-view-btn" data-view="calendar">
+                <i class="fas fa-calendar-alt"></i> Lịch tháng
+            </button>
+        </div>
+
+        <script>
+            var cbCalendarData = <?php echo wp_json_encode($calendar_data); ?>;
+        </script>
+
+        <div id="cb-table-view" class="cb-history-view-content">
         <!-- Tabs lọc trạng thái -->
         <div class="dd-tabs">
             <button class="dd-tab-btn active" data-status="all">Tất cả (<?php echo count($appointments); ?>)</button>
@@ -4958,6 +6197,62 @@ function doctor_dashboard_shortcode() {
                 </table>
             <?php endif; ?>
         </div>
+        </div> <!-- Close #cb-table-view -->
+
+        <!-- Chế độ xem Lịch tháng (Calendar View) dành cho Bác sĩ -->
+        <div id="dd-calendar-view" class="cb-history-view-content" style="display: none;">
+            <div class="cb-calendar-wrapper">
+                <div class="cb-calendar-header">
+                    <div class="cb-calendar-nav">
+                        <button type="button" id="cb-cal-prev" class="cb-cal-nav-btn"><i class="fas fa-chevron-left"></i></button>
+                        <span id="cb-cal-month-year" class="cb-cal-title">...</span>
+                        <button type="button" id="cb-cal-next" class="cb-cal-nav-btn"><i class="fas fa-chevron-right"></i></button>
+                    </div>
+                    <div class="cb-calendar-actions">
+                        <div class="cb-dropdown">
+                            <button type="button" class="cb-dropdown-toggle" style="background: #005086; color: #fff; border: none; padding: 8px 16px; border-radius: 8px; font-weight: 700; font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; transition: all 0.2s;">
+                                <i class="fas fa-calendar-plus"></i> Đăng ký Lịch <i class="fas fa-chevron-down" style="font-size: 10px;"></i>
+                            </button>
+                            <ul class="cb-dropdown-menu">
+                                <li><a href="#" id="cb-doc-ics-copy-link" data-link="<?php echo esc_url( home_url('/lich-su/ics/?token=' . $ics_token . '&role=doctor') ); ?>"><i class="far fa-copy"></i> Sao chép link đăng ký</a></li>
+                                <li><a href="<?php echo esc_url( str_replace(array('http://', 'https://'), 'webcal://', home_url('/lich-su/ics/?token=' . $ics_token . '&role=doctor')) ); ?>"><i class="fab fa-apple"></i> Thêm vào Apple Calendar</a></li>
+                                <li><a href="<?php echo esc_url( home_url('/lich-su/ics/?token=' . $ics_token . '&role=doctor') ); ?>" download="lich-kham-bac-si.ics"><i class="fas fa-download"></i> Tải file .ics</a></li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                <div class="cb-calendar-weekdays">
+                    <div class="cb-weekday">CN</div>
+                    <div class="cb-weekday">T2</div>
+                    <div class="cb-weekday">T3</div>
+                    <div class="cb-weekday">T4</div>
+                    <div class="cb-weekday">T5</div>
+                    <div class="cb-weekday">T6</div>
+                    <div class="cb-weekday">T7</div>
+                </div>
+                <div class="cb-calendar-grid" id="cb-calendar-grid">
+                    <!-- JS renders dates here -->
+                </div>
+            </div>
+            <div class="cb-calendar-legend">
+                <span class="legend-item"><span class="legend-dot status-pending"></span> Chờ xác nhận</span>
+                <span class="legend-item"><span class="legend-dot status-confirmed"></span> Đã xác nhận</span>
+                <span class="legend-item"><span class="legend-dot status-completed"></span> Đã khám xong</span>
+                <span class="legend-item"><span class="legend-dot status-rejected"></span> Đã từ chối</span>
+                <span class="legend-item"><span class="legend-dot status-cancelled"></span> Đã hủy</span>
+            </div>
+        </div>
+
+        <!-- Popup Chi tiết lịch hẹn trong ngày dành cho Bác sĩ -->
+        <div id="cb-day-popup" class="cb-day-popup" style="display: none;">
+            <div class="cb-day-popup-header">
+                <span class="cb-day-popup-title"><i class="far fa-calendar-check"></i> Lịch hẹn ngày <span id="cb-popup-date-title">--/--/----</span></span>
+                <span class="cb-day-popup-close">&times;</span>
+            </div>
+            <div id="cb-day-popup-body" class="cb-day-popup-body">
+                <!-- Loaded dynamically via JS -->
+            </div>
+        </div>
     </div>
 
     <!-- Modal: Từ chối lịch hẹn -->
@@ -5033,6 +6328,236 @@ function doctor_dashboard_shortcode() {
     <script>
     jQuery(document).ready(function($) {
         var ajaxurl = '<?php echo admin_url('admin-ajax.php'); ?>';
+
+        // --- LẬP TRÌNH BỘ LỊCH THÁNG (CALENDAR VIEW) CHO BÁC SĨ ---
+        var today = new Date();
+        var currentYear = today.getFullYear();
+        var currentMonth = today.getMonth(); // 0 - 11
+
+        // Chuyển đổi qua lại giữa Tab Danh sách & Lịch tháng dành cho Bác sĩ
+        $('.cb-view-btn').on('click', function(e) {
+            e.preventDefault();
+            var view = $(this).data('view');
+            $('.cb-view-btn').removeClass('active');
+            $(this).addClass('active');
+
+            $('.cb-history-view-content').hide();
+            if (view === 'table') {
+                $('#cb-table-view').show();
+                $('#cb-day-popup').hide();
+            } else {
+                $('#dd-calendar-view').show();
+                renderCalendar(currentYear, currentMonth);
+            }
+        });
+
+        // Hàm render Lịch tháng
+        function renderCalendar(year, month) {
+            var monthNames = ["Tháng 1", "Tháng 2", "Tháng 3", "Tháng 4", "Tháng 5", "Tháng 6", "Tháng 7", "Tháng 8", "Tháng 9", "Tháng 10", "Tháng 11", "Tháng 12"];
+            $('#cb-cal-month-year').text(monthNames[month] + ', ' + year);
+
+            var firstDay = new Date(year, month, 1).getDay(); // Thứ của ngày đầu tiên (0 = Chủ Nhật)
+            var daysInMonth = new Date(year, month + 1, 0).getDate();
+
+            // Lấy thông tin tháng trước để làm đệm (padding)
+            var prevMonthYear = month === 0 ? year - 1 : year;
+            var prevMonth = month === 0 ? 11 : month - 1;
+            var daysInPrevMonth = new Date(prevMonthYear, prevMonth + 1, 0).getDate();
+
+            var gridHtml = '';
+
+            // Thêm đệm của tháng trước
+            for (var i = firstDay - 1; i >= 0; i--) {
+                var dayNum = daysInPrevMonth - i;
+                gridHtml += '<div class="cb-calendar-day other-month">' +
+                            '<span class="cb-day-num">' + dayNum + '</span>' +
+                            '</div>';
+            }
+
+            // Vẽ các ngày trong tháng hiện tại
+            for (var day = 1; day <= daysInMonth; day++) {
+                var dayStr = ('0' + day).slice(-2);
+                var monthStr = ('0' + (month + 1)).slice(-2);
+                var dateStr = dayStr + '/' + monthStr + '/' + year;
+
+                var isToday = (day === today.getDate() && month === today.getMonth() && year === today.getFullYear());
+                var todayClass = isToday ? ' today' : '';
+
+                // Lọc các lịch hẹn trùng với ngày này
+                var appointments = cbCalendarData.filter(function(app) {
+                    return app.date === dateStr;
+                });
+
+                var hasAppsClass = appointments.length > 0 ? ' has-appointments' : '';
+                var dotsHtml = '';
+
+                if (appointments.length > 0) {
+                    dotsHtml += '<div class="cb-day-dots">';
+                    var visibleApps = appointments.slice(0, 3);
+                    visibleApps.forEach(function(app) {
+                        dotsHtml += '<span class="cb-calendar-dot ' + app.status_class + '" title="' + app.time + ' - ' + app.patient + ' (' + app.status_label + ')"></span>';
+                    });
+                    if (appointments.length > 3) {
+                        dotsHtml += '<span style="font-size: 8px; font-weight: 700; color: #718096; line-height: 1;">+' + (appointments.length - 3) + '</span>';
+                    }
+                    dotsHtml += '</div>';
+                }
+
+                gridHtml += '<div class="cb-calendar-day' + todayClass + hasAppsClass + '" data-date="' + dateStr + '">' +
+                            '<span class="cb-day-num">' + day + '</span>' +
+                            dotsHtml +
+                            '</div>';
+            }
+
+            // Thêm đệm của tháng sau để hoàn tất tuần cuối cùng
+            var totalCells = firstDay + daysInMonth;
+            var nextMonthPadding = (7 - (totalCells % 7)) % 7;
+            for (var day = 1; day <= nextMonthPadding; day++) {
+                gridHtml += '<div class="cb-calendar-day other-month">' +
+                            '<span class="cb-day-num">' + day + '</span>' +
+                            '</div>';
+            }
+
+            $('#cb-calendar-grid').html(gridHtml);
+        }
+
+        // Sự kiện điều hướng lịch ◄ / ►
+        $('#cb-cal-prev').on('click', function(e) {
+            e.preventDefault();
+            currentMonth--;
+            if (currentMonth < 0) {
+                currentMonth = 11;
+                currentYear--;
+            }
+            renderCalendar(currentYear, currentMonth);
+            $('#cb-day-popup').hide();
+        });
+
+        $('#cb-cal-next').on('click', function(e) {
+            e.preventDefault();
+            currentMonth++;
+            if (currentMonth > 11) {
+                currentMonth = 0;
+                currentYear++;
+            }
+            renderCalendar(currentYear, currentMonth);
+            $('#cb-day-popup').hide();
+        });
+
+        // Sự kiện bấm vào một ngày có lịch hẹn (Dành cho Bác sĩ)
+        $(document).on('click', '.cb-calendar-day.has-appointments', function(e) {
+            e.stopPropagation();
+            var dateStr = $(this).data('date');
+            var appointments = cbCalendarData.filter(function(app) {
+                return app.date === dateStr;
+            });
+
+            if (appointments.length === 0) return;
+
+            $('#cb-popup-date-title').text(dateStr);
+
+            var bodyHtml = '';
+            appointments.forEach(function(app) {
+                var actionButtons = '';
+                if (app.status === 'pending') {
+                    actionButtons = '<div class="cb-popup-actions">' +
+                                    '<button type="button" class="cb-action-btn cb-btn-confirm" data-id="' + app.id + '" title="Xác nhận lịch hẹn"><i class="fas fa-check"></i> Duyệt</button>' +
+                                    '<button type="button" class="cb-action-btn cb-btn-reject" data-id="' + app.id + '" title="Từ chối lịch hẹn"><i class="fas fa-times"></i> Từ chối</button>' +
+                                    '</div>';
+                } else if (app.status === 'publish') {
+                    actionButtons = '<div class="cb-popup-actions">' +
+                                    '<button type="button" class="cb-action-btn cb-btn-complete" data-id="' + app.id + '" title="Đánh dấu đã khám xong"><i class="fas fa-notes-medical"></i> Hoàn thành</button>' +
+                                    '</div>';
+                } else if (app.status === 'completed') {
+                    actionButtons = '<div class="cb-popup-actions">' +
+                                    '<button type="button" class="cb-action-btn cb-btn-view-notes" data-id="' + app.id + '" data-notes="' + app.medical_notes + '" title="Xem ghi chú y khoa"><i class="fas fa-eye"></i> Xem ghi chú</button>' +
+                                    '</div>';
+                } else if (app.status === 'private') {
+                    actionButtons = '<div class="cb-popup-actions">' +
+                                    '<button type="button" class="cb-action-btn cb-btn-view-reason" data-id="' + app.id + '" data-reason="' + app.reject_reason + '" title="Xem lý do từ chối"><i class="fas fa-info-circle"></i> Lý do từ chối</button>' +
+                                    '</div>';
+                } else {
+                    actionButtons = '<div style="margin-top: 8px;"><span class="cb-popup-status-text status-cancelled"><i class="fas fa-ban"></i> Đã hủy bởi bệnh nhân</span></div>';
+                }
+
+                bodyHtml += '<div class="cb-popup-appointment-card status-' + app.status + '">' +
+                            '<div class="cb-popup-time-badge"><i class="far fa-clock"></i> ' + app.time + '</div>' +
+                            '<div class="cb-popup-doc-name">' + app.patient + ' (' + app.patient_gender + ')</div>' +
+                            '<div class="cb-popup-specialty">Ngày sinh: ' + app.patient_dob + ' | SĐT: ' + app.patient_phone + '</div>' +
+                            '<div class="cb-popup-patient-name" style="margin-top: 6px;"><i class="far fa-comments"></i> Triệu chứng: ' + (app.symptoms || 'Không khai báo') + '</div>' +
+                            actionButtons +
+                            '</div>';
+            });
+
+            $('#cb-day-popup-body').html(bodyHtml);
+
+            // Định vị popup tuyệt đối
+            var offset = $(this).offset();
+            var cellHeight = $(this).outerHeight();
+            var cellWidth = $(this).outerWidth();
+            var popupWidth = $('#cb-day-popup').outerWidth() || 320;
+            
+            var popupLeft = offset.left + cellWidth / 2 - popupWidth / 2;
+            var popupTop = offset.top + cellHeight + 6;
+
+            var containerWidth = $('.doctor-dashboard').outerWidth();
+            var containerOffset = $('.doctor-dashboard').offset();
+            
+            if (popupLeft < containerOffset.left + 16) {
+                popupLeft = containerOffset.left + 16;
+            } else if (popupLeft + popupWidth > containerOffset.left + containerWidth - 16) {
+                popupLeft = containerOffset.left + containerWidth - popupWidth - 16;
+            }
+
+            var relativeLeft = popupLeft - containerOffset.left;
+            var relativeTop = popupTop - containerOffset.top;
+
+            $('#cb-day-popup').css({
+                top: relativeTop + 'px',
+                left: relativeLeft + 'px',
+                display: 'block'
+            });
+        });
+
+        // Sự kiện đóng popup
+        $(document).on('click', '.cb-day-popup-close', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            $('#cb-day-popup').hide();
+        });
+
+        // Đóng popup khi click ngoài lịch
+        $(document).on('click', function(e) {
+            if (!$(e.target).closest('#cb-day-popup').length && !$(e.target).closest('.cb-calendar-day').length) {
+                $('#cb-day-popup').hide();
+            }
+        });
+
+        // --- LẬP TRÌNH DROPDOWN ĐĂNG KÝ LỊCH ---
+        $(document).on('click', '.cb-dropdown-toggle', function(e) {
+            e.stopPropagation();
+            $(this).parent('.cb-dropdown').toggleClass('open');
+        });
+
+        $(document).on('click', function(e) {
+            if (!$(e.target).closest('.cb-dropdown').length) {
+                $('.cb-dropdown').removeClass('open');
+            }
+        });
+
+        $(document).on('click', '#cb-doc-ics-copy-link', function(e) {
+            e.preventDefault();
+            var link = $(this).data('link');
+            
+            var $temp = $("<input>");
+            $("body").append($temp);
+            $temp.val(link).select();
+            document.execCommand("copy");
+            $temp.remove();
+
+            alert('Đã sao chép link đăng ký lịch làm việc thành công!\n\nBạn có thể dán link này vào Google Calendar (chọn mục "Thêm từ URL" trong cài đặt lịch của Google) hoặc Apple Calendar trên điện thoại để đồng bộ tự động lịch hẹn của bệnh nhân.');
+            $('.cb-dropdown').removeClass('open');
+        });
 
         // 1. Logic Lọc theo Tabs
         $('.dd-tab-btn').on('click', function() {
@@ -7251,5 +8776,246 @@ function cb_admin_dashboard_widget_html() {
     });
     </script>
     <?php
+}
+
+/**
+ * --- TÍNH NĂNG ĐĂNG KÝ LỊCH QUA ICS (GOOGLE / APPLE CALENDAR) ---
+ */
+
+// Đăng ký WordPress Rewrite Rules cho endpoint sạch /lich-su/ics/
+function cb_ics_rewrite_rules() {
+    add_rewrite_rule(
+        '^lich-su/ics/?$',
+        'index.php?cb_ics_feed=1',
+        'top'
+    );
+}
+add_action('init', 'cb_ics_rewrite_rules');
+
+// Đăng ký Query Var cho feed
+function cb_ics_query_vars($vars) {
+    $vars[] = 'cb_ics_feed';
+    return $vars;
+}
+add_filter('query_vars', 'cb_ics_query_vars');
+
+// Tự động flush rewrite rules một lần duy nhất để không làm lỗi 404
+function cb_ics_flush_rules_on_init() {
+    if (!get_option('cb_ics_rules_flushed')) {
+        cb_ics_rewrite_rules();
+        flush_rewrite_rules();
+        update_option('cb_ics_rules_flushed', 1);
+    }
+}
+add_action('init', 'cb_ics_flush_rules_on_init', 99);
+
+// Bắt sự kiện request và chuyển hướng tới hàm tạo file ICS
+function cb_ics_template_redirect() {
+    if (get_query_var('cb_ics_feed') || isset($_GET['cb_ics_feed'])) {
+        cb_generate_ics_feed();
+        exit;
+    }
+}
+add_action('template_redirect', 'cb_ics_template_redirect');
+
+// Hàm sinh file ICS chuẩn RFC 5545 cho Google / Apple Calendar
+function cb_generate_ics_feed() {
+    $token = isset($_GET['token']) ? sanitize_text_field($_GET['token']) : '';
+    if (empty($token)) {
+        wp_die('Lỗi: Thiếu tham số token bảo mật.', 'Lỗi Truy Cập', array('response' => 403));
+    }
+
+    // Tìm user tương ứng với token này
+    $users = get_users(array(
+        'meta_key'   => '_cb_ics_token',
+        'meta_value' => $token,
+        'number'     => 1
+    ));
+
+    if (empty($users)) {
+        wp_die('Lỗi: Token bảo mật không đúng hoặc đã hết hạn.', 'Lỗi Xác Thực', array('response' => 403));
+    }
+
+    $user = $users[0];
+    $user_id = $user->ID;
+
+    $role = isset($_GET['role']) ? sanitize_text_field($_GET['role']) : 'patient';
+
+    if ($role === 'doctor') {
+        // Tìm bài viết Bác sĩ liên kết với tài khoản này
+        $doctor_posts = get_posts(array(
+            'post_type' => 'doctor',
+            'meta_query' => array(
+                array(
+                    'key' => '_doctor_user_id',
+                    'value' => $user_id,
+                )
+            ),
+            'posts_per_page' => 1
+        ));
+
+        if (empty($doctor_posts)) {
+            wp_die('Lỗi: Bạn chưa được liên kết với hồ sơ bác sĩ nào trong hệ thống.', 'Lỗi Xác Thực', array('response' => 403));
+        }
+
+        $doctor_id = $doctor_posts[0]->ID;
+
+        // Query các lịch hẹn của Bác sĩ (lấy tất cả trạng thái)
+        $args = array(
+            'post_type'      => 'appointment',
+            'post_status'    => array('pending', 'publish', 'completed', 'private', 'draft'),
+            'meta_query'     => array(
+                array(
+                    'key' => '_doctor_id',
+                    'value' => (string)$doctor_id
+                )
+            ),
+            'posts_per_page' => -1,
+            'orderby'        => 'date',
+            'order'          => 'DESC'
+        );
+    } else {
+        // Query các lịch hẹn của Bệnh nhân (lấy tất cả trạng thái)
+        $args = array(
+            'post_type'      => 'appointment',
+            'post_status'    => array('pending', 'publish', 'completed', 'private', 'draft'),
+            'author'         => $user_id,
+            'posts_per_page' => -1,
+            'orderby'        => 'date',
+            'order'          => 'DESC'
+        );
+    }
+
+    $query = new WP_Query($args);
+
+    // Bắt đầu build nội dung file ICS
+    $ics = "BEGIN:VCALENDAR\r\n";
+    $ics .= "VERSION:2.0\r\n";
+    $ics .= "PRODID:-//Clinic System//Booking Calendar//VI\r\n";
+    $ics .= "CALSCALE:GREGORIAN\r\n";
+    $ics .= "METHOD:PUBLISH\r\n";
+    $ics .= "X-WR-CALNAME:Lich Kham Benh (" . $user->display_name . ")\r\n";
+    $ics .= "X-WR-TIMEZONE:Asia/Ho_Chi_Minh\r\n";
+
+    if ($query->have_posts()) {
+        while ($query->have_posts()) {
+            $query->the_post();
+            $post_id = get_the_ID();
+            $status = get_post_status();
+
+            // Lấy ngày giờ lịch hẹn
+            $date_str = get_post_meta($post_id, '_booking_date', true); // Format: d/m/Y
+            $time_str = get_post_meta($post_id, '_booking_time', true); // Format: H:i
+
+            $date_parts = explode('/', $date_str);
+            if (count($date_parts) == 3 && !empty($time_str)) {
+                $day = $date_parts[0];
+                $month = $date_parts[1];
+                $year = $date_parts[2];
+
+                $time_parts = explode(':', $time_str);
+                $hour = isset($time_parts[0]) ? $time_parts[0] : '00';
+                $minute = isset($time_parts[1]) ? $time_parts[1] : '00';
+
+                // Format ICS DateTime: YYYYMMDDTHHmmSS
+                $dtstart = $year . $month . $day . 'T' . $hour . $minute . '00';
+
+                // Mặc định thời gian khám kéo dài 1 tiếng
+                $start_timestamp = mktime($hour, $minute, 0, $month, $day, $year);
+                $end_timestamp = $start_timestamp + 3600;
+                $dtend = date('Ymd\THis', $end_timestamp);
+            } else {
+                continue;
+            }
+
+            // Map trạng thái lịch khám sang mã ICS chuẩn
+            $status_ics = 'TENTATIVE';
+            if ($status == 'publish' || $status == 'completed') {
+                $status_ics = 'CONFIRMED';
+            } elseif ($status == 'private' || $status == 'draft') {
+                $status_ics = 'CANCELLED';
+            }
+
+            // Lấy các meta fields chi tiết
+            $doctor = get_post_meta($post_id, '_selected_doctor', true);
+            $specialty = get_post_meta($post_id, '_specialty', true);
+            $clinic = get_post_meta($post_id, '_clinic', true);
+            $patient = get_post_meta($post_id, '_patient_name', true);
+            $phone = get_post_meta($post_id, '_patient_phone', true);
+            $raw_symptoms = get_post_field('post_content', $post_id);
+            $symptoms = str_replace('Triệu chứng: ', '', $raw_symptoms);
+
+            $description = "Bac si: " . $doctor . "\\n";
+            $description .= "Chuyen khoa: " . $specialty . "\\n";
+            $description .= "Benh nhan: " . $patient . " (SDT: " . $phone . ")\\n";
+            if (!empty($symptoms)) {
+                $description .= "Trieu chung: " . str_replace(array("\r", "\n"), " ", $symptoms) . "\\n";
+            }
+            $reject_reason = get_post_meta($post_id, '_reject_reason', true);
+            if (!empty($reject_reason)) {
+                $description .= "Ly do tu choi: " . $reject_reason . "\\n";
+            }
+
+            $summary = "Lich hen: " . $doctor . " - " . $patient;
+
+            // Xử lý loại bỏ ký tự đặc biệt theo chuẩn ICS RFC 5545
+            $summary = str_replace(array(',', ';'), array('\,', '\;'), $summary);
+            $description = str_replace(array(',', ';'), array('\,', '\;'), $description);
+            $clinic = str_replace(array(',', ';'), array('\,', '\;'), $clinic);
+
+            // Bỏ dấu tiếng Việt để hiển thị tốt nhất trên mọi loại Lịch thiết bị (tránh lỗi font ở một số dòng máy cổ)
+            $summary = cb_remove_vietnamese_accents($summary);
+            $description = cb_remove_vietnamese_accents($description);
+            $clinic = cb_remove_vietnamese_accents($clinic);
+
+            $ics .= "BEGIN:VEVENT\r\n";
+            $ics .= "UID:appointment-" . $post_id . "@clinic-system\r\n";
+            $ics .= "DTSTAMP:" . date('Ymd\THis\Z') . "\r\n";
+            $ics .= "DTSTART;TZID=Asia/Ho_Chi_Minh:" . $dtstart . "\r\n";
+            $ics .= "DTEND;TZID=Asia/Ho_Chi_Minh:" . $dtend . "\r\n";
+            $ics .= "SUMMARY:" . $summary . "\r\n";
+            $ics .= "DESCRIPTION:" . $description . "\r\n";
+            $ics .= "LOCATION:" . $clinic . "\r\n";
+            $ics .= "STATUS:" . $status_ics . "\r\n";
+            $ics .= "END:VEVENT\r\n";
+        }
+        wp_reset_postdata();
+    }
+
+    $ics .= "END:VCALENDAR\r\n";
+
+    // Set header trả về file ICS
+    header('Content-Type: text/calendar; charset=utf-8');
+    header('Content-Disposition: attachment; filename="lich-kham.ics"');
+    header('Cache-Control: no-cache, no-store, must-revalidate');
+    header('Pragma: no-cache');
+    header('Expires: 0');
+    echo $ics;
+    exit;
+}
+
+// Hàm loại bỏ dấu tiếng Việt hỗ trợ hiển thị tuyệt đối trên các nền tảng lịch cổ
+function cb_remove_vietnamese_accents($str) {
+    $unicode = array(
+        'a'=>'á|à|ả|ã|ạ|ă|ắ|ằ|ẳ|ẵ|ạ|â|ấ|ầ|ẩ|ẫ|ậ',
+        'A'=>'Á|À|Ả|Ã|Ạ|Ă|Ắ|Ằ|Ẳ|Ẵ|Ạ|Â|Ấ|Ầ|Ẩ|Ẫ|Ậ',
+        'd'=>'đ',
+        'D'=>'Đ',
+        'e'=>'é|è|ẻ|ẽ|ẹ|ê|ế|ề|ể|ễ|ệ',
+        'E'=>'É|È|Ẻ|Ẽ|Ẹ|Ê|Ế|Ề|Ể|Ễ|Ệ',
+        'i'=>'í|ì|ỉ|ĩ|ị',
+        'I'=>'Í|Ì|Ỉ|Ĩ|Ị',
+        'o'=>'ó|ò|ỏ|õ|ọ|ô|ố|ồ|ổ|ỗ|ộ|ơ|ớ|ờ|ở|ỡ|ợ',
+        'O'=>'Ó|Ò|Ỏ|Õ|Ọ|Ô|Ố|Ồ|Ổ|Ỗ|Ộ|Ơ|Ớ|Ờ|Ở|Ỡ|Ợ',
+        'u'=>'ú|ù|ủ|ũ|ụ|ư|ứ|ừ|ử|ữ|ự',
+        'U'=>'Ú|Ù|Ủ|Ũ|Ụ|Ư|Ứ|Ừ|Ử|Ữ|Ự',
+        'y'=>'ý|ỳ|ỷ|ỹ|ỵ',
+        'Y'=>'Ý|Ỳ|Ỷ|Ỹ|Ỵ'
+    );
+    foreach($unicode as $khongdau=>$codau) {
+        $arr = explode("|", $codau);
+        $str = str_replace($arr, $khongdau, $str);
+    }
+    return $str;
 }
 ?>
